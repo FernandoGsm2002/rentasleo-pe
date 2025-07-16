@@ -3,7 +3,8 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
-  let response = NextResponse.next({
+  // Crear respuesta que se puede modificar
+  let supabaseResponse = NextResponse.next({
     request: {
       headers: request.headers,
     },
@@ -14,93 +15,63 @@ export async function middleware(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get(name: string) {
-          return request.cookies.get(name)?.value
+        getAll() {
+          return request.cookies.getAll()
         },
-        set(name: string, value: string, options: any) {
-          request.cookies.set({
-            name,
-            value,
-            ...options,
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'lax'
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            request.cookies.set(name, value)
           })
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
+          supabaseResponse = NextResponse.next({
+            request,
           })
-          response.cookies.set({
-            name,
-            value,
-            ...options,
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'lax'
-          })
-        },
-        remove(name: string, options: any) {
-          request.cookies.set({
-            name,
-            value: '',
-            ...options,
-            maxAge: 0
-          })
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
-          })
-          response.cookies.set({
-            name,
-            value: '',
-            ...options,
-            maxAge: 0
+          cookiesToSet.forEach(({ name, value, options }) => {
+            supabaseResponse.cookies.set(name, value, options)
           })
         },
       },
-      auth: {
-        flowType: 'pkce'
-      }
     }
   )
 
-  // Solo verificar autenticación en rutas del dashboard
-  if (request.nextUrl.pathname.startsWith('/dashboard')) {
-    try {
-      const { data: { session }, error } = await supabase.auth.getSession()
-      
-      if (error || !session) {
-        // Usuario no autenticado, redirigir al login con parámetro redirect
-        const redirectUrl = new URL('/', request.url)
-        redirectUrl.searchParams.set('redirect', request.nextUrl.pathname)
-        return NextResponse.redirect(redirectUrl)
-      }
+  // CRÍTICO: No escribir lógica entre createServerClient y getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
 
-      // Usuario autenticado, permitir acceso
-      return response
-      
-    } catch (error) {
-      console.error('Error en middleware:', error)
-      // En caso de error, redirigir al login
-      const redirectUrl = new URL('/', request.url)
-      redirectUrl.searchParams.set('redirect', request.nextUrl.pathname)
-      return NextResponse.redirect(redirectUrl)
-    }
+  const { pathname } = request.nextUrl
+
+  // Rutas que requieren autenticación
+  const protectedRoutes = ['/dashboard']
+  const isProtectedRoute = protectedRoutes.some(route => pathname.startsWith(route))
+
+  // Si no hay usuario y está intentando acceder a ruta protegida
+  if (!user && isProtectedRoute) {
+    const redirectUrl = new URL('/', request.url)
+    // Preservar el parámetro redirect
+    redirectUrl.searchParams.set('redirect', pathname)
+    return NextResponse.redirect(redirectUrl)
   }
 
-  return response
+  // Si hay usuario y está en la página de login, redirigir al dashboard
+  if (user && pathname === '/') {
+    const redirectTo = request.nextUrl.searchParams.get('redirect') || '/dashboard'
+    const redirectUrl = new URL(redirectTo, request.url)
+    return NextResponse.redirect(redirectUrl)
+  }
+
+  // CRÍTICO: Devolver supabaseResponse tal como está
+  // Esto es esencial para mantener las cookies sincronizadas
+  return supabaseResponse
 }
 
 export const config = {
   matcher: [
     /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - public folder
+     * Coincidir con todas las rutas excepto:
+     * - _next/static (archivos estáticos)
+     * - _next/image (optimización de imágenes)
+     * - favicon.ico (favicon)
+     * - archivos públicos (png, jpg, etc.)
      */
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],

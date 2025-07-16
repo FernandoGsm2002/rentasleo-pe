@@ -1,18 +1,16 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState, useRef } from 'react'
 import { User } from '@supabase/supabase-js'
-import { createSupabaseBrowserClient, withRetry, logError } from '@/lib/supabase'
+import { createSupabaseBrowserClient, checkSessionHealth, forceTokenRefresh } from '@/lib/supabase'
 import { Usuario } from '@/types/supabase'
 
 interface AuthContextType {
   user: User | null
   usuario: Usuario | null
   loading: boolean
-  showWelcome: boolean
   signIn: (email: string, password: string) => Promise<{ error: any }>
   signOut: () => Promise<void>
-  registrarIngreso: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -21,332 +19,246 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [usuario, setUsuario] = useState<Usuario | null>(null)
   const [loading, setLoading] = useState(true)
-  const [showWelcome, setShowWelcome] = useState(false)
   const supabase = createSupabaseBrowserClient()
+  const sessionCheckInterval = useRef<NodeJS.Timeout | null>(null)
+  const isCheckingSession = useRef(false)
+
+  // Función para verificar y mantener la sesión activa
+  const maintainSession = async () => {
+    if (isCheckingSession.current) return
+    
+    try {
+      isCheckingSession.current = true
+      const { healthy, session } = await checkSessionHealth()
+      
+      if (!healthy && user) {
+        console.log('🔄 [Session Maintenance] Sesión no saludable, intentando refresh...')
+        const refreshResult = await forceTokenRefresh()
+        
+        if (!refreshResult.success) {
+          console.log('❌ [Session Maintenance] No se pudo refrescar token, cerrando sesión...')
+          await signOut()
+        } else {
+          console.log('✅ [Session Maintenance] Token refrescado exitosamente')
+        }
+      }
+    } catch (error) {
+      console.error('❌ [Session Maintenance] Error:', error)
+    } finally {
+      isCheckingSession.current = false
+    }
+  }
+
+  // Configurar verificación periódica de sesión
+  useEffect(() => {
+    // Verificar cada 5 minutos (300000ms)
+    sessionCheckInterval.current = setInterval(maintainSession, 5 * 60 * 1000)
+    
+    return () => {
+      if (sessionCheckInterval.current) {
+        clearInterval(sessionCheckInterval.current)
+      }
+    }
+  }, [user])
 
   useEffect(() => {
-    let isMounted = true
-
-    // Obtener la sesión inicial con retry
-    const getSession = async () => {
+    // Verificar sesión inicial
+    const getInitialSession = async () => {
       try {
-        console.log('🔄 Obteniendo sesión inicial...')
-        
-        const { data: { session }, error } = await withRetry(
-          () => supabase.auth.getSession(),
-          3,
-          1000
-        )
+        console.log('🔐 [AuthProvider] Obteniendo sesión inicial...')
+        const { data: { session }, error } = await supabase.auth.getSession()
         
         if (error) {
-          logError('getSession', error)
-          if (isMounted) {
-            setLoading(false)
-          }
-          return
-        }
-        
-        if (!isMounted) return
-
-        console.log('📋 Sesión obtenida:', session ? 'Usuario autenticado' : 'Sin sesión')
-        setUser(session?.user ?? null)
-        
-        if (session?.user) {
-          console.log('👤 Obteniendo datos de usuario desde BD...')
-          await obtenerDatosUsuario(session.user.id, session.user.email)
+          console.error('❌ [AuthProvider] Error obteniendo sesión:', error)
         } else {
-          console.log('🚫 Sin sesión activa')
+          console.log('🔐 [AuthProvider] Sesión inicial:', session?.user?.email || 'Sin sesión')
+          setUser(session?.user ?? null)
+          
+          if (session?.user?.email) {
+            await obtenerUsuario(session.user.email)
+          }
         }
       } catch (error) {
-        logError('getSession', error)
+        console.error('❌ [AuthProvider] Error en getInitialSession:', error)
       } finally {
-        if (isMounted) {
-          console.log('✅ Carga inicial completada')
-          setLoading(false)
-        }
+        setLoading(false)
       }
     }
 
-    getSession()
+    getInitialSession()
 
-    // Escuchar cambios de autenticación
+    // Escuchar cambios de autenticación CON TODOS LOS EVENTOS
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        if (!isMounted) return
-
-        console.log('🔄 Auth state changed:', event, session?.user?.id)
-
-        setUser(session?.user ?? null)
+        console.log('🔐 [AuthProvider] Auth event:', event, 'User:', session?.user?.email || 'None')
         
-        if (session?.user) {
-          await obtenerDatosUsuario(session.user.id, session.user.email)
-          if (event === 'SIGNED_IN') {
-            await registrarIngreso()
-          }
-        } else {
-          setUsuario(null)
+        // Manejar diferentes tipos de eventos
+        switch (event) {
+          case 'SIGNED_IN':
+            console.log('✅ [AuthProvider] Usuario logueado exitosamente')
+            setUser(session?.user ?? null)
+            if (session?.user?.email) {
+              await obtenerUsuario(session.user.email)
+              // Redirigir después del login exitoso
+              const urlParams = new URLSearchParams(window.location.search)
+              const redirectTo = urlParams.get('redirect') || '/dashboard'
+              console.log('🎯 [AuthProvider] Redirigiendo a:', redirectTo)
+              window.location.href = redirectTo
+            }
+            break
+
+          case 'SIGNED_OUT':
+            console.log('👋 [AuthProvider] Usuario deslogueado')
+            setUser(null)
+            setUsuario(null)
+            // Limpiar intervalo de verificación
+            if (sessionCheckInterval.current) {
+              clearInterval(sessionCheckInterval.current)
+              sessionCheckInterval.current = null
+            }
+            window.location.href = '/'
+            break
+
+          case 'TOKEN_REFRESHED':
+            console.log('🔄 [AuthProvider] Token refrescado exitosamente')
+            setUser(session?.user ?? null)
+            // Revalidar datos del usuario si es necesario
+            if (session?.user?.email && !usuario) {
+              await obtenerUsuario(session.user.email)
+            }
+            break
+
+          case 'USER_UPDATED':
+            console.log('👤 [AuthProvider] Usuario actualizado')
+            setUser(session?.user ?? null)
+            break
+
+          case 'PASSWORD_RECOVERY':
+            console.log('🔑 [AuthProvider] Recuperación de contraseña')
+            break
+
+          default:
+            console.log('🔐 [AuthProvider] Evento no manejado:', event)
+            setUser(session?.user ?? null)
+            if (session?.user?.email) {
+              await obtenerUsuario(session.user.email)
+            } else {
+              setUsuario(null)
+            }
         }
         
-        if (isMounted) {
-          setLoading(false)
-        }
+        setLoading(false)
       }
     )
 
     return () => {
-      isMounted = false
+      console.log('🔐 [AuthProvider] Limpiando suscripción de auth')
       subscription.unsubscribe()
+      if (sessionCheckInterval.current) {
+        clearInterval(sessionCheckInterval.current)
+      }
     }
   }, [])
 
-  const obtenerDatosUsuario = async (userId: string, userEmail?: string) => {
+  const obtenerUsuario = async (email: string) => {
     try {
-      console.log('🔍 Buscando usuario con ID:', userId)
-      console.log('📧 Email proporcionado:', userEmail)
+      console.log('👤 [AuthProvider] Obteniendo datos del usuario:', email)
       
-      // Primero buscar por ID con retry
-      const result = await withRetry(
-        async () => {
-          const response = await supabase
-            .from('usuarios')
-            .select('*')
-            .eq('id', userId)
-            .single()
-          return response
-        },
-        2,
-        500
-      )
+      const { data, error } = await supabase
+        .from('usuarios')
+        .select('*')
+        .eq('email', email)
+        .single()
 
-      if (result.data && !result.error) {
-        setUsuario(result.data)
-        console.log('✅ Usuario encontrado por ID:', { nombre: result.data.nombre, rol: result.data.rol })
-        return
+      if (error) {
+        console.error('❌ [AuthProvider] Error obteniendo usuario:', error)
+        throw error
       }
 
-      console.log('⚠️ Usuario no encontrado por ID, buscando por email...')
-
-      // Si no se encuentra por ID, buscar por email
-      if (userEmail) {
-        const emailResult = await withRetry(
-          async () => {
-            const response = await supabase
-              .from('usuarios')
-              .select('*')
-              .eq('email', userEmail)
-              .single()
-            return response
-          },
-          2,
-          500
-        )
-
-        if (emailResult.data && !emailResult.error) {
-          setUsuario(emailResult.data)
-          console.log('✅ Usuario encontrado por email:', { nombre: emailResult.data.nombre, rol: emailResult.data.rol })
-          return
-        }
-      }
-
-      console.log('⚠️ Usuario no existe en BD, creando nuevo usuario...')
-
-      // Si no existe, crear nuevo usuario
-      if (userEmail) {
-        await crearUsuarioEnBD(userId, userEmail)
+      if (data) {
+        console.log('✅ [AuthProvider] Usuario encontrado:', data.nombre, 'Rol:', data.rol)
+        setUsuario(data)
       } else {
-        console.error('❌ No se puede crear usuario sin email')
-        // Crear usuario temporal para evitar bloqueo
-        setUsuario(createTempUser(userId))
+        console.error('❌ [AuthProvider] Usuario no encontrado en la base de datos')
+        setUsuario(null)
       }
     } catch (error) {
-      logError('obtenerDatosUsuario', error, { userId, userEmail })
-      // En caso de error, crear usuario temporal
-      setUsuario(createTempUser(userId, userEmail))
-    }
-  }
-
-  const createTempUser = (userId: string, email?: string): Usuario => {
-    const tempUser = {
-      id: userId,
-      email: email || 'usuario@temporal.com',
-      nombre: email ? email.split('@')[0] : 'Usuario',
-      rol: 'trabajador' as const,
-      activo: true,
-      sueldo_base: 0,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    }
-    console.log('🆘 Creando usuario temporal:', tempUser)
-    return tempUser
-  }
-
-  const crearUsuarioEnBD = async (userId: string, email: string) => {
-    try {
-      const nuevoUsuario = {
-        id: userId,
-        email: email,
-        nombre: email.split('@')[0] || 'Usuario',
-        rol: 'trabajador' as const,
-        activo: true,
-        sueldo_base: 0
-      }
-
-      console.log('🚀 Creando nuevo usuario en BD:', nuevoUsuario)
-
-      const result = await withRetry(
-        async () => {
-          const response = await supabase
-            .from('usuarios')
-            .insert(nuevoUsuario)
-            .select()
-            .single()
-          return response
-        },
-        2,
-        1000
-      )
-
-      if (result.data && !result.error) {
-        setUsuario(result.data)
-        console.log('✅ Usuario creado exitosamente:', { nombre: result.data.nombre, rol: result.data.rol })
-      } else if (result.error?.code === '23505') {
-        console.log('⚠️ Usuario ya existe, buscando nuevamente...')
-        // Usuario ya existe, buscar nuevamente
-        const { data: usuarioExistente } = await supabase
-          .from('usuarios')
-          .select('*')
-          .eq('email', email)
-          .single()
-          
-        if (usuarioExistente) {
-          setUsuario(usuarioExistente)
-          console.log('✅ Usuario existente encontrado:', { nombre: usuarioExistente.nombre, rol: usuarioExistente.rol })
-        } else {
-          setUsuario(createTempUser(userId, email))
-        }
-      } else {
-        logError('crearUsuarioEnBD', result.error, { userId, email })
-        setUsuario(createTempUser(userId, email))
-      }
-    } catch (error) {
-      logError('crearUsuarioEnBD', error, { userId, email })
-      setUsuario(createTempUser(userId, email))
+      console.error('❌ [AuthProvider] Error en obtenerUsuario:', error)
+      setUsuario(null)
     }
   }
 
   const signIn = async (email: string, password: string) => {
+    console.log('🔑 [AuthProvider] Iniciando sesión para:', email)
+    
     try {
-      console.log('🔐 Intentando iniciar sesión...')
-      setLoading(true)
-      
-      const { data, error } = await withRetry(
-        () => supabase.auth.signInWithPassword({
-          email,
-          password,
-        }),
-        2,
-        1000
-      )
-      
-      if (!error && data.session) {
-        console.log('✅ Login exitoso - ID:', data.session.user.id)
-        console.log('📧 Email:', data.session.user.email)
-        
-        // Mostrar mensaje de bienvenida
-        setShowWelcome(true)
-        
-        // El AuthContext se encargará de la redirección automática
-        // a través del useEffect cuando detecte el cambio de estado
-        console.log('🎯 Login completado, esperando redirección automática...')
-        
-        setTimeout(() => {
-          setShowWelcome(false)
-        }, 2500)
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
+
+      if (error) {
+        console.error('❌ [AuthProvider] Error en login:', error.message)
       } else {
-        setLoading(false)
-        logError('signIn', error, { email })
+        console.log('✅ [AuthProvider] Login exitoso')
       }
-      
+
       return { error }
     } catch (error) {
-      setLoading(false)
-      logError('signIn', error, { email })
+      console.error('❌ [AuthProvider] Error en signIn:', error)
       return { error }
     }
   }
 
   const signOut = async () => {
+    console.log('🚪 [AuthProvider] Cerrando sesión...')
+    
     try {
-      console.log('🚪 Cerrando sesión...')
-      setLoading(true)
+      // Limpiar intervalo de verificación inmediatamente
+      if (sessionCheckInterval.current) {
+        clearInterval(sessionCheckInterval.current)
+        sessionCheckInterval.current = null
+      }
+      
+      // Limpiar estado inmediatamente
       setUser(null)
       setUsuario(null)
       
+      // Cerrar sesión en Supabase
       const { error } = await supabase.auth.signOut()
       
       if (error) {
-        logError('signOut', error)
+        console.error('❌ [AuthProvider] Error cerrando sesión:', error)
       } else {
-        console.log('✅ Logout exitoso')
+        console.log('✅ [AuthProvider] Sesión cerrada exitosamente')
       }
       
-      // Limpiar cookies y redirigir
-      document.cookie.split(";").forEach((c) => {
-        const eqPos = c.indexOf("=")
-        const name = eqPos > -1 ? c.substr(0, eqPos) : c
-        document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/"
-      })
-      
+      // Redirigir al login independientemente del resultado
       window.location.href = '/'
     } catch (error) {
-      logError('signOut', error)
+      console.error('❌ [AuthProvider] Error en signOut:', error)
+      // Incluso si hay error, redirigir al login
       window.location.href = '/'
-    } finally {
-      setLoading(false)
     }
   }
 
-  const registrarIngreso = async () => {
-    if (!user) return
-
-    try {
-      console.log('📝 Registrando ingreso...')
-      await withRetry(
-        async () => {
-          const response = await supabase
-            .from('ingresos')
-            .insert({
-              usuario_id: user.id,
-              user_agent: navigator.userAgent,
-            })
-          return response
-        },
-        2,
-        500
-      )
-      console.log('✅ Ingreso registrado')
-    } catch (error) {
-      logError('registrarIngreso', error, { userId: user.id })
-    }
-  }
-
-  const value = {
-    user,
-    usuario,
-    loading,
-    showWelcome,
-    signIn,
-    signOut,
-    registrarIngreso,
-  }
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+  return (
+    <AuthContext.Provider value={{
+      user,
+      usuario,
+      loading,
+      signIn,
+      signOut,
+    }}>
+      {children}
+    </AuthContext.Provider>
+  )
 }
 
-export function useAuth() {
+export const useAuth = () => {
   const context = useContext(AuthContext)
   if (context === undefined) {
-    throw new Error('useAuth debe ser usado dentro de un AuthProvider')
+    throw new Error('useAuth must be used within an AuthProvider')
   }
   return context
 } 

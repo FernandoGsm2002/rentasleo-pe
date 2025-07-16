@@ -29,7 +29,17 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useToast } from '@/components/ui/toast'
-import { withRetry, logError } from '@/lib/supabase'
+
+// Funciones helper simplificadas
+const simpleLog = (operation: string, error: any) => {
+  console.error(`🔴 [${operation}] Error detallado:`, {
+    message: error?.message || 'Sin mensaje',
+    code: error?.code || 'Sin código',
+    details: error?.details || 'Sin detalles',
+    hint: error?.hint || 'Sin sugerencia',
+    fullError: error
+  })
+}
 
 // Herramientas predefinidas
 const HERRAMIENTAS_DISPONIBLES = [
@@ -106,37 +116,37 @@ export default function RentasAdmin() {
 
   const loadRentas = async () => {
     try {
-      console.log('📋 Cargando rentas...')
-      const result = await withRetry(
-        async () => {
-          const response = await supabase
-            .from('rentas_herramientas')
-            .select(`
-              *,
-              usuario_responsable:usuarios(*)
-            `)
-            .order('created_at', { ascending: false })
-          return response
-        },
-        3,
-        1000
-      )
+      console.log('📋 [loadRentas] Iniciando carga de rentas...')
+      const result = await supabase
+        .from('rentas_herramientas')
+        .select(`
+          *,
+          usuario_responsable:usuarios(*)
+        `)
+        .order('created_at', { ascending: false })
+
+      console.log('📋 [loadRentas] Respuesta recibida:', result)
 
       if (result.error) {
+        console.error('❌ [loadRentas] Error en la consulta:', result.error)
         throw result.error
       }
       
+      console.log('📋 [loadRentas] Estableciendo rentas en estado...', result.data?.length || 0, 'elementos')
       setRentas(result.data || [])
       console.log('✅ Rentas cargadas:', result.data?.length || 0)
     } catch (error) {
-      logError('loadRentas', error)
+      console.error('❌ [loadRentas] Error en catch:', error)
+      simpleLog('loadRentas', error)
       addToast({
         type: 'error',
         title: 'Error al cargar rentas',
         message: 'No se pudieron cargar las rentas. Intenta recargar la página.'
       })
     } finally {
+      console.log('📋 [loadRentas] Estableciendo loading en false...')
       setLoading(false)
+      console.log('📋 [loadRentas] loadRentas completado!')
     }
   }
 
@@ -177,17 +187,10 @@ export default function RentasAdmin() {
       }
 
       if (editingRenta) {
-        const result = await withRetry(
-          async () => {
-            const response = await supabase
-              .from('rentas_herramientas')
-              .update(rentaData)
-              .eq('id', editingRenta.id)
-            return response
-          },
-          2,
-          1000
-        )
+        const result = await supabase
+          .from('rentas_herramientas')
+          .update(rentaData)
+          .eq('id', editingRenta.id)
 
         if (result.error) throw result.error
         
@@ -197,16 +200,9 @@ export default function RentasAdmin() {
           message: `La licencia ${data.usuario_login} se actualizó correctamente`
         })
       } else {
-        const result = await withRetry(
-          async () => {
-            const response = await supabase
-              .from('rentas_herramientas')
-              .insert(rentaData)
-            return response
-          },
-          2,
-          1000
-        )
+        const result = await supabase
+          .from('rentas_herramientas')
+          .insert(rentaData)
 
         if (result.error) throw result.error
         
@@ -222,7 +218,7 @@ export default function RentasAdmin() {
       reset()
       await loadRentas()
     } catch (error) {
-      logError('onSubmit', error, { isEditing: !!editingRenta, data })
+              simpleLog('onSubmit', error)
       addToast({
         type: 'error',
         title: editingRenta ? 'Error al actualizar' : 'Error al crear',
@@ -246,35 +242,42 @@ export default function RentasAdmin() {
     if (submitting) return
 
     try {
+      console.log('🔵 [1] Iniciando proceso de renta...')
       setSubmitting(true)
+      console.log('🔵 [2] Estado submitting establecido en true')
       console.log('🚀 Iniciando renta para:', rentingLicense.nombre_herramienta)
 
       // Combinar fecha y hora seleccionadas
       const fechaInicio = new Date(`${selectedStartDate}T${selectedStartTime}`)
       const fechaFin = new Date(fechaInicio.getTime() + (selectedDuration * 60 * 60 * 1000))
+      
+      console.log('🔵 [3] Fechas calculadas:', {
+        inicio: fechaInicio.toISOString(),
+        fin: fechaFin.toISOString(),
+        duracion: selectedDuration
+      })
 
-      const result = await withRetry(
-        async () => {
-          const response = await supabase
-            .from('rentas_herramientas')
-            .update({
-              duracion_horas: selectedDuration,
-              fecha_inicio: fechaInicio.toISOString(),
-              fecha_fin: fechaFin.toISOString(),
-              usuario_responsable_id: selectedResponsible || null,
-              activa: true
-            })
-            .eq('id', rentingLicense.id)
-          return response
-        },
-        3,
-        1000
-      )
+      console.log('🔵 [4] Preparando actualización de base de datos...')
+
+      const result = await supabase
+        .from('rentas_herramientas')
+        .update({
+          duracion_horas: selectedDuration,
+          fecha_inicio: fechaInicio.toISOString(),
+          fecha_fin: fechaFin.toISOString(),
+          usuario_responsable_id: selectedResponsible || null,
+          activa: true
+        })
+        .eq('id', rentingLicense.id)
+
+      console.log('🔵 [5] Respuesta de la base de datos:', result)
 
       if (result.error) {
+        console.error('🔴 [ERROR] Error en la actualización:', result.error)
         throw result.error
       }
 
+      console.log('🔵 [6] Actualización exitosa, mostrando toast...')
       console.log('✅ Renta iniciada exitosamente')
       addToast({
         type: 'success',
@@ -282,22 +285,30 @@ export default function RentasAdmin() {
         message: `La renta de ${rentingLicense.nombre_herramienta} se inició correctamente`
       })
 
+      console.log('🔵 [7] Limpiando modales y estado...')
       setShowRentModal(false)
       setRentingLicense(null)
       setSelectedDuration(24)
       setSelectedResponsible('')
       setSelectedStartDate('')
       setSelectedStartTime('')
+      
+      console.log('🔵 [8] Iniciando recarga de rentas...')
       await loadRentas()
+      console.log('🔵 [9] Recarga de rentas completada!')
+      
     } catch (error) {
-      logError('startRent', error, { licenseId: rentingLicense?.id, selectedDuration })
+      console.error('🔴 [ERROR] Error en startRent:', error)
+      simpleLog('startRent', error)
       addToast({
         type: 'error',
         title: 'Error al iniciar renta',
         message: 'No se pudo iniciar la renta. Por favor intenta nuevamente.'
       })
     } finally {
+      console.log('🔵 [10] Ejecutando finally, estableciendo submitting en false...')
       setSubmitting(false)
+      console.log('🔵 [11] Proceso completado!')
     }
   }
 
@@ -332,17 +343,10 @@ export default function RentasAdmin() {
     try {
       console.log('🗑️ Eliminando licencia:', id)
       
-      const result = await withRetry(
-        async () => {
-          const response = await supabase
-            .from('rentas_herramientas')
-            .delete()
-            .eq('id', id)
-          return response
-        },
-        2,
-        1000
-      )
+      const result = await supabase
+        .from('rentas_herramientas')
+        .delete()
+        .eq('id', id)
 
       if (result.error) throw result.error
       
@@ -354,7 +358,7 @@ export default function RentasAdmin() {
       
       await loadRentas()
     } catch (error) {
-      logError('handleDelete', error, { id })
+              simpleLog('handleDelete', error)
       addToast({
         type: 'error',
         title: 'Error al eliminar',

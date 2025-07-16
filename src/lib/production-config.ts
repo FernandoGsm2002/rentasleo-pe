@@ -1,155 +1,128 @@
-// Configuración específica para producción
+// Configuraciones optimizadas para producción
 export const PRODUCTION_CONFIG = {
-  // Delays para evitar problemas de hydration
-  NAVIGATION_DELAY: 200,
-  TOAST_DELAY: 300,
-  RETRY_DELAY: 500,
+  // Configuraciones de autenticación
+  auth: {
+    // Verificar sesión cada 5 minutos en lugar de esperar a que expire
+    sessionCheckInterval: 5 * 60 * 1000, // 5 minutos
+    // Tiempo máximo para operaciones de auth
+    authTimeout: 30000, // 30 segundos
+    // Número de reintentos para operaciones críticas
+    maxRetries: 3,
+    // Tiempo entre reintentos
+    retryDelay: 2000, // 2 segundos
+  },
   
-  // Timeouts
-  AUTH_TIMEOUT: 10000,
-  SESSION_CHECK_TIMEOUT: 5000,
+  // Configuraciones de base de datos
+  database: {
+    // Timeout para consultas de base de datos
+    queryTimeout: 15000, // 15 segundos
+    // Timeout para operaciones de escritura
+    writeTimeout: 20000, // 20 segundos
+    // Configuración de conexión
+    connectionTimeout: 10000, // 10 segundos
+  },
   
-  // Retry settings
-  MAX_RETRIES: 3,
-  RETRY_MULTIPLIER: 1.5,
+  // Configuraciones de UI
+  ui: {
+    // Tiempo para mostrar mensajes de loading
+    loadingTimeout: 30000, // 30 segundos
+    // Tiempo para auto-cerrar toasts
+    toastDuration: 5000, // 5 segundos
+    // Debounce para búsquedas
+    searchDebounce: 300, // 300ms
+  },
   
-  // Cache settings
-  SESSION_CACHE_DURATION: 60000, // 1 minuto
+  // Configuraciones de red
+  network: {
+    // Tiempo máximo para requests HTTP
+    httpTimeout: 25000, // 25 segundos
+    // Reintentos automáticos para errores de red
+    networkRetries: 2,
+    // Tiempo entre reintentos de red
+    networkRetryDelay: 1500, // 1.5 segundos
+  },
   
-  // URLs
-  SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
-  PRODUCTION_URL: 'https://leope-staff.vercel.app',
+  // Configuraciones específicas para Supabase
+  supabase: {
+    // Storage key personalizado
+    storageKey: 'sb-rentas-auth-token',
+    // Configuraciones de refresh de token
+    tokenRefreshThreshold: 300, // 5 minutos antes de expirar
+    // Auto-logout si no se puede refrescar token
+    autoLogoutOnTokenError: true,
+    // Configuraciones de realtime
+    realtime: {
+      eventsPerSecond: 10,
+      timeout: 20000
+    }
+  },
   
-  // Feature flags
-  ENABLE_DIAGNOSTICS: process.env.NODE_ENV !== 'production',
-  ENABLE_VERBOSE_LOGGING: process.env.NODE_ENV !== 'production',
-  
-  // Error handling
-  SHOW_ERROR_DETAILS: process.env.NODE_ENV !== 'production',
+  // Configuraciones de desarrollo vs producción
+  environment: {
+    isDevelopment: process.env.NODE_ENV === 'development',
+    isProduction: process.env.NODE_ENV === 'production',
+    // Logging detallado solo en desarrollo
+    enableDetailedLogs: process.env.NODE_ENV === 'development',
+    // Verificaciones adicionales en desarrollo
+    enableHealthChecks: true,
+  }
 }
 
-// Utilidad para verificar si estamos en producción
-export const isProduction = () => process.env.NODE_ENV === 'production'
-
-// Utilidad para obtener delay adecuado según el ambiente
-export const getDelay = (type: 'navigation' | 'toast' | 'retry') => {
-  if (!isProduction()) return 0
-  
-  switch (type) {
-    case 'navigation':
-      return PRODUCTION_CONFIG.NAVIGATION_DELAY
-    case 'toast':
-      return PRODUCTION_CONFIG.TOAST_DELAY
-    case 'retry':
-      return PRODUCTION_CONFIG.RETRY_DELAY
+// Función helper para obtener timeout basado en el tipo de operación
+export const getOperationTimeout = (operation: 'auth' | 'database' | 'network'): number => {
+  switch (operation) {
+    case 'auth':
+      return PRODUCTION_CONFIG.auth.authTimeout
+    case 'database':
+      return PRODUCTION_CONFIG.database.queryTimeout
+    case 'network':
+      return PRODUCTION_CONFIG.network.httpTimeout
     default:
-      return 100
+      return 15000 // Default 15 segundos
   }
 }
 
-// Utilidad para logging condicional
-export const log = {
-  debug: (message: string, ...args: any[]) => {
-    if (PRODUCTION_CONFIG.ENABLE_VERBOSE_LOGGING) {
-      console.log(`🔍 ${message}`, ...args)
-    }
-  },
-  
-  info: (message: string, ...args: any[]) => {
-    console.log(`ℹ️ ${message}`, ...args)
-  },
-  
-  warn: (message: string, ...args: any[]) => {
-    console.warn(`⚠️ ${message}`, ...args)
-  },
-  
-  error: (message: string, ...args: any[]) => {
-    console.error(`❌ ${message}`, ...args)
-  },
-  
-  success: (message: string, ...args: any[]) => {
-    console.log(`✅ ${message}`, ...args)
+// Función para logging condicional
+export const conditionalLog = (message: string, data?: any) => {
+  if (PRODUCTION_CONFIG.environment.enableDetailedLogs) {
+    console.log(message, data || '')
   }
 }
 
-// Función para manejo de errores de producción
-export const handleProductionError = (error: any, context: string) => {
-  log.error(`Error en ${context}:`, error)
+// Función para retry con configuración
+export const withRetry = async <T>(
+  operation: () => Promise<T>,
+  maxRetries: number = PRODUCTION_CONFIG.auth.maxRetries,
+  delay: number = PRODUCTION_CONFIG.auth.retryDelay
+): Promise<T> => {
+  let lastError: any
   
-  // En producción, enviar error a servicio de logging
-  if (isProduction()) {
-    // TODO: Integrar con servicio de logging (Sentry, etc.)
+  for (let i = 0; i <= maxRetries; i++) {
     try {
-      // Fallback: almacenar en localStorage para debugging
-      const errorLog = {
-        timestamp: new Date().toISOString(),
-        context,
-        error: {
-          message: error?.message || 'Unknown error',
-          stack: error?.stack,
-          code: error?.code
-        },
-        url: typeof window !== 'undefined' ? window.location.href : 'server',
-        userAgent: typeof window !== 'undefined' ? navigator.userAgent : 'server'
-      }
+      return await operation()
+    } catch (error) {
+      lastError = error
+      conditionalLog(`🔄 Intento ${i + 1}/${maxRetries + 1} falló:`, error)
       
-      if (typeof window !== 'undefined') {
-        const existingLogs = localStorage.getItem('production-errors') || '[]'
-        const logs = JSON.parse(existingLogs)
-        logs.push(errorLog)
-        
-        // Mantener solo los últimos 10 errores
-        if (logs.length > 10) {
-          logs.splice(0, logs.length - 10)
-        }
-        
-        localStorage.setItem('production-errors', JSON.stringify(logs))
-      }
-    } catch (logError) {
-      console.error('Error guardando log:', logError)
-    }
-  }
-}
-
-// Utilidad para verificar conectividad de red
-export const checkNetworkConnectivity = async (): Promise<boolean> => {
-  if (typeof window === 'undefined') return true
-  
-  try {
-    // Verificar si hay conectividad básica
-    if (!navigator.onLine) {
-      return false
-    }
-    
-    // Intentar hacer ping a un endpoint confiable
-    const response = await fetch('/api/health', { 
-      method: 'HEAD',
-      cache: 'no-store'
-    })
-    
-    return response.ok
-  } catch {
-    return false
-  }
-}
-
-// Utilidad para limpiar storage en caso de problemas
-export const clearStorageOnError = () => {
-  if (typeof window === 'undefined') return
-  
-  try {
-    // Limpiar solo items relacionados con auth
-    const keysToRemove = []
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i)
-      if (key && (key.includes('supabase') || key.includes('sb-'))) {
-        keysToRemove.push(key)
+      if (i < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, delay))
       }
     }
-    
-    keysToRemove.forEach(key => localStorage.removeItem(key))
-    log.info('Storage limpiado por error de autenticación')
-  } catch (error) {
-    log.error('Error limpiando storage:', error)
   }
+  
+  throw lastError
+}
+
+// Configuración para timeout de Promise
+export const withTimeout = <T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  timeoutMessage: string = 'Operación timeout'
+): Promise<T> => {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs)
+    )
+  ])
 } 

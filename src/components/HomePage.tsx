@@ -3,51 +3,28 @@
 import { useAuth } from '@/contexts/AuthContext'
 import LoginForm from '@/components/auth/LoginForm'
 import { useRouter } from 'next/navigation'
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 
 export default function HomePage() {
   const { user, usuario, loading, showWelcome } = useAuth()
   const router = useRouter()
-  const redirecting = useRef(false)
 
   useEffect(() => {
-    console.log('🏠 HomePage - Estado completo:', { 
+    console.log('🏠 HomePage - Estado:', { 
       user: user ? { id: user.id, email: user.email } : null, 
       usuario: usuario ? { 
         id: usuario.id, 
         email: usuario.email, 
         nombre: usuario.nombre,
-        rol: usuario.rol,
-        activo: usuario.activo 
+        rol: usuario.rol
       } : null, 
-      loading,
-      redirecting: redirecting.current
+      loading
     })
     
-    // Solo redirigir si tenemos usuario completo, no estamos cargando y no hemos redirigido ya
-    if (user && usuario && !loading && !redirecting.current) {
-      console.log('🔄 Evaluando redirección para usuario:', {
-        id: usuario.id,
-        email: usuario.email,
-        rol: usuario.rol
-      })
-      
-      redirecting.current = true
-      
-      // Redirigir al dashboard según el rol
-      if (usuario.rol === 'creador') {
-        console.log('👑 Usuario es CREADOR - Redirigiendo a dashboard de admin')
-        router.push('/dashboard/admin')
-      } else if (usuario.rol === 'trabajador') {
-        console.log('👤 Usuario es TRABAJADOR - Redirigiendo a dashboard de trabajador')
-        router.push('/dashboard/trabajador')
-      } else {
-        console.warn('⚠️ Rol de usuario no reconocido:', usuario.rol)
-        // Por defecto ir a trabajador
-        router.push('/dashboard/trabajador')
-      }
-    } else if (user && !usuario && !loading) {
-      console.warn('⚠️ Usuario autenticado pero sin datos en BD')
+    // Si el usuario está autenticado y tenemos sus datos, redirigir al dashboard
+    if (user && usuario && !loading) {
+      console.log('🔄 Usuario autenticado, redirigiendo al dashboard')
+      router.push('/dashboard')
     }
   }, [user, usuario, loading, router])
 
@@ -60,10 +37,6 @@ export default function HomePage() {
         </div>
       </div>
     )
-  }
-
-  if (!user) {
-    return <LoginForm />
   }
 
   // Mostrar mensaje de bienvenida después del login
@@ -93,7 +66,7 @@ export default function HomePage() {
     )
   }
 
-  // Si hay usuario pero no datos de BD, mostrar mensaje
+  // Si hay usuario pero no datos de BD, mostrar mensaje de configuración
   if (user && !usuario) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -105,11 +78,17 @@ export default function HomePage() {
     )
   }
 
+  // Si no hay usuario, mostrar login
+  if (!user) {
+    return <LoginForm />
+  }
+
+  // Estado de transición
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="text-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-        <p className="mt-2 text-gray-600">Redirigiendo...</p>
+        <p className="mt-2 text-gray-600">Preparando dashboard...</p>
       </div>
     </div>
   )

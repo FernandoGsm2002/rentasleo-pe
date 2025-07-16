@@ -30,25 +30,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Obtener la sesión inicial
     const getSession = async () => {
       try {
+        console.log('🔄 Obteniendo sesión inicial...')
         const { data: { session }, error } = await supabase.auth.getSession()
         
         if (error) {
-          console.error('Error obteniendo sesión:', error)
-          setLoading(false)
+          console.error('❌ Error obteniendo sesión:', error)
+          if (isMounted) {
+            setLoading(false)
+          }
           return
         }
         
         if (!isMounted) return
 
+        console.log('📋 Sesión obtenida:', session ? 'Usuario autenticado' : 'Sin sesión')
         setUser(session?.user ?? null)
         
         if (session?.user) {
+          console.log('👤 Obteniendo datos de usuario desde BD...')
           await obtenerDatosUsuario(session.user.id, session.user.email)
+        } else {
+          console.log('🚫 Sin sesión activa')
         }
       } catch (error) {
-        console.error('Error obteniendo sesión:', error)
+        console.error('💥 Error obteniendo sesión:', error)
       } finally {
         if (isMounted) {
+          console.log('✅ Carga inicial completada')
           setLoading(false)
         }
       }
@@ -100,9 +108,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (data && !error) {
         setUsuario(data)
-        console.log('✅ Usuario encontrado por ID:', data)
+        console.log('✅ Usuario encontrado por ID:', { nombre: data.nombre, rol: data.rol })
         return
       }
+
+      console.log('⚠️ Usuario no encontrado por ID, buscando por email...')
 
       // Si no se encuentra por ID, buscar por email
       if (userEmail) {
@@ -114,10 +124,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (usuarioPorEmail && !errorEmail) {
           setUsuario(usuarioPorEmail)
-          console.log('✅ Usuario encontrado por email:', usuarioPorEmail)
+          console.log('✅ Usuario encontrado por email:', { nombre: usuarioPorEmail.nombre, rol: usuarioPorEmail.rol })
           return
         }
       }
+
+      console.log('⚠️ Usuario no existe en BD, creando nuevo usuario...')
 
       // Si no existe, crear nuevo usuario
       if (userEmail) {
@@ -128,22 +140,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUsuario(createTempUser(userId))
       }
     } catch (error) {
-      console.error('Error obteniendo datos usuario:', error)
+      console.error('💥 Error obteniendo datos usuario:', error)
       // En caso de error, crear usuario temporal
       setUsuario(createTempUser(userId, userEmail))
     }
   }
 
-  const createTempUser = (userId: string, email?: string): Usuario => ({
-    id: userId,
-    email: email || 'usuario@temporal.com',
-    nombre: email ? email.split('@')[0] : 'Usuario',
-    rol: 'trabajador' as const,
-    activo: true,
-    sueldo_base: 0,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  })
+  const createTempUser = (userId: string, email?: string): Usuario => {
+    const tempUser = {
+      id: userId,
+      email: email || 'usuario@temporal.com',
+      nombre: email ? email.split('@')[0] : 'Usuario',
+      rol: 'trabajador' as const,
+      activo: true,
+      sueldo_base: 0,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }
+    console.log('🆘 Creando usuario temporal:', tempUser)
+    return tempUser
+  }
 
   const crearUsuarioEnBD = async (userId: string, email: string) => {
     try {
@@ -156,7 +172,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         sueldo_base: 0
       }
 
-      console.log('🚀 Creando nuevo usuario:', nuevoUsuario)
+      console.log('🚀 Creando nuevo usuario en BD:', nuevoUsuario)
 
       const { data, error } = await supabase
         .from('usuarios')
@@ -166,8 +182,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (data && !error) {
         setUsuario(data)
-        console.log('✅ Usuario creado exitosamente:', data)
+        console.log('✅ Usuario creado exitosamente:', { nombre: data.nombre, rol: data.rol })
       } else if (error?.code === '23505') {
+        console.log('⚠️ Usuario ya existe, buscando nuevamente...')
         // Usuario ya existe, buscar nuevamente
         const { data: usuarioExistente } = await supabase
           .from('usuarios')
@@ -177,7 +194,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           
         if (usuarioExistente) {
           setUsuario(usuarioExistente)
-          console.log('✅ Usuario existente encontrado:', usuarioExistente)
+          console.log('✅ Usuario existente encontrado:', { nombre: usuarioExistente.nombre, rol: usuarioExistente.rol })
         } else {
           setUsuario(createTempUser(userId, email))
         }
@@ -186,37 +203,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUsuario(createTempUser(userId, email))
       }
     } catch (error) {
-      console.error('Error en crearUsuarioEnBD:', error)
+      console.error('💥 Error en crearUsuarioEnBD:', error)
       setUsuario(createTempUser(userId, email))
     }
   }
 
   const signIn = async (email: string, password: string) => {
     try {
+      console.log('🔐 Intentando iniciar sesión...')
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
       
       if (!error && data.session) {
+        console.log('✅ Login exitoso')
         setShowWelcome(true)
         setTimeout(() => {
           setShowWelcome(false)
         }, 3000)
         
-        // Forzar actualización de sesión
-        window.location.href = '/dashboard'
+        // Redirigir a la página base del dashboard que manejará el rol
+        setTimeout(() => {
+          window.location.href = '/dashboard'
+        }, 1000)
+      } else {
+        console.error('❌ Error en login:', error)
       }
       
       return { error }
     } catch (error) {
-      console.error('Error en signIn:', error)
+      console.error('💥 Error en signIn:', error)
       return { error }
     }
   }
 
   const signOut = async () => {
     try {
+      console.log('🚪 Cerrando sesión...')
       setLoading(true)
       setUser(null)
       setUsuario(null)
@@ -224,7 +248,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { error } = await supabase.auth.signOut()
       
       if (error) {
-        console.error('Error en logout:', error)
+        console.error('❌ Error en logout:', error)
+      } else {
+        console.log('✅ Logout exitoso')
       }
       
       // Limpiar cookies y redirigir
@@ -236,7 +262,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       window.location.href = '/'
     } catch (error) {
-      console.error('Error inesperado en logout:', error)
+      console.error('💥 Error inesperado en logout:', error)
       window.location.href = '/'
     } finally {
       setLoading(false)
@@ -247,14 +273,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!user) return
 
     try {
+      console.log('📝 Registrando ingreso...')
       await supabase
         .from('ingresos')
         .insert({
           usuario_id: user.id,
           user_agent: navigator.userAgent,
         })
+      console.log('✅ Ingreso registrado')
     } catch (error) {
-      console.error('Error registrando ingreso:', error)
+      console.error('❌ Error registrando ingreso:', error)
     }
   }
 

@@ -55,25 +55,19 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  // Si es una ruta del dashboard, verificar autenticación
+  // Solo verificar autenticación en rutas del dashboard
   if (request.nextUrl.pathname.startsWith('/dashboard')) {
     const { data: { session } } = await supabase.auth.getSession()
     
     if (!session) {
       // Usuario no autenticado, redirigir al login
+      console.log('🚫 Usuario no autenticado, redirigiendo a login')
       const redirectUrl = new URL('/', request.url)
       return NextResponse.redirect(redirectUrl)
     }
-  }
 
-  // Si es la página principal y el usuario está autenticado, redirigir al dashboard
-  if (request.nextUrl.pathname === '/') {
-    const { data: { session } } = await supabase.auth.getSession()
-    
-    if (session) {
-      const redirectUrl = new URL('/dashboard', request.url)
-      return NextResponse.redirect(redirectUrl)
-    }
+    // Usuario autenticado, permitir acceso
+    console.log('✅ Usuario autenticado, permitiendo acceso a:', request.nextUrl.pathname)
   }
 
   return response

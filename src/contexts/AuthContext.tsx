@@ -22,20 +22,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [usuario, setUsuario] = useState<Usuario | null>(null)
   const [loading, setLoading] = useState(true)
   const [showWelcome, setShowWelcome] = useState(false)
-  const [userProcessed, setUserProcessed] = useState<string | null>(null) // Para evitar bucles
   const supabase = createSupabaseBrowserClient()
 
   useEffect(() => {
+    let isMounted = true
+
     // Obtener la sesión inicial
     const getSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      setUser(session?.user ?? null)
-      
-      if (session?.user && userProcessed !== session.user.id) {
-        setUserProcessed(session.user.id)
-        await obtenerDatosUsuario(session.user.id, session.user.email)
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        
+        if (!isMounted) return
+
+        setUser(session?.user ?? null)
+        
+        if (session?.user) {
+          await obtenerDatosUsuario(session.user.id, session.user.email)
+        }
+      } catch (error) {
+        console.error('Error obteniendo sesión:', error)
+      } finally {
+        if (isMounted) {
+          setLoading(false)
+        }
       }
-      setLoading(false)
     }
 
     getSession()
@@ -43,38 +53,97 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Escuchar cambios de autenticación
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        if (!isMounted) return
+
         setUser(session?.user ?? null)
         
-        if (session?.user && userProcessed !== session.user.id) {
-          setUserProcessed(session.user.id)
+        if (session?.user) {
           await obtenerDatosUsuario(session.user.id, session.user.email)
           if (event === 'SIGNED_IN') {
             await registrarIngreso()
           }
-        } else if (!session?.user) {
+        } else {
           setUsuario(null)
-          setUserProcessed(null)
         }
-        setLoading(false)
+        
+        if (isMounted) {
+          setLoading(false)
+        }
       }
     )
 
-    return () => subscription.unsubscribe()
-  }, [userProcessed]) // Agregar userProcessed como dependencia
+    return () => {
+      isMounted = false
+      subscription.unsubscribe()
+    }
+  }, [])
 
-  const crearUsuarioEnBD = async (userId: string, email: string) => {
+  const obtenerDatosUsuario = async (userId: string, userEmail?: string) => {
     try {
-      // Validar que tenemos email
-      if (!email) {
-        console.error('❌ No se puede crear usuario sin email')
+      console.log('🔍 Buscando usuario con ID:', userId)
+      console.log('📧 Email proporcionado:', userEmail)
+      
+      // Primero buscar por ID
+      const { data, error } = await supabase
+        .from('usuarios')
+        .select('*')
+        .eq('id', userId)
+        .single()
+
+      if (data && !error) {
+        setUsuario(data)
+        console.log('✅ Usuario encontrado por ID:', data)
         return
       }
 
+      // Si no se encuentra por ID, buscar por email
+      if (userEmail) {
+        const { data: usuarioPorEmail, error: errorEmail } = await supabase
+          .from('usuarios')
+          .select('*')
+          .eq('email', userEmail)
+          .single()
+
+        if (usuarioPorEmail && !errorEmail) {
+          setUsuario(usuarioPorEmail)
+          console.log('✅ Usuario encontrado por email:', usuarioPorEmail)
+          return
+        }
+      }
+
+      // Si no existe, crear nuevo usuario
+      if (userEmail) {
+        await crearUsuarioEnBD(userId, userEmail)
+      } else {
+        console.error('❌ No se puede crear usuario sin email')
+        // Crear usuario temporal para evitar bloqueo
+        setUsuario(createTempUser(userId))
+      }
+    } catch (error) {
+      console.error('Error obteniendo datos usuario:', error)
+      // En caso de error, crear usuario temporal
+      setUsuario(createTempUser(userId, userEmail))
+    }
+  }
+
+  const createTempUser = (userId: string, email?: string): Usuario => ({
+    id: userId,
+    email: email || 'usuario@temporal.com',
+    nombre: email ? email.split('@')[0] : 'Usuario',
+    rol: 'trabajador' as const,
+    activo: true,
+    sueldo_base: 0,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  })
+
+  const crearUsuarioEnBD = async (userId: string, email: string) => {
+    try {
       const nuevoUsuario = {
         id: userId,
         email: email,
         nombre: email.split('@')[0] || 'Usuario',
-        rol: 'trabajador' as const, // Por defecto trabajador
+        rol: 'trabajador' as const,
         activo: true,
         sueldo_base: 0
       }
@@ -87,127 +156,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .select()
         .single()
 
-      console.log('📊 Resultado de creación:', { data, error })
-
       if (data && !error) {
         setUsuario(data)
         console.log('✅ Usuario creado exitosamente:', data)
+      } else if (error?.code === '23505') {
+        // Usuario ya existe, buscar nuevamente
+        const { data: usuarioExistente } = await supabase
+          .from('usuarios')
+          .select('*')
+          .eq('email', email)
+          .single()
+          
+        if (usuarioExistente) {
+          setUsuario(usuarioExistente)
+          console.log('✅ Usuario existente encontrado:', usuarioExistente)
+        } else {
+          setUsuario(createTempUser(userId, email))
+        }
       } else {
-        console.error('❌ Error creando usuario en BD:', error)
-        
-        // Si el error es por email duplicado, buscar el usuario existente
-        if (error?.code === '23505' && error?.message?.includes('usuarios_email_key')) {
-          console.log('⚠️ Email ya existe, buscando usuario existente...')
-          const { data: usuarioExistente } = await supabase
-            .from('usuarios')
-            .select('*')
-            .eq('email', email)
-            .single()
-            
-          if (usuarioExistente) {
-            console.log('✅ Usuario existente encontrado:', usuarioExistente)
-            setUsuario(usuarioExistente)
-            return
-          }
-        }
-        
-        // Crear usuario temporal si falla la creación
-        const usuarioTemporal = {
-          ...nuevoUsuario,
-          sueldo_base: 0,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }
-        setUsuario(usuarioTemporal)
-        console.log('⚠️ Usando usuario temporal:', usuarioTemporal)
+        console.error('❌ Error creando usuario:', error)
+        setUsuario(createTempUser(userId, email))
       }
     } catch (error) {
       console.error('Error en crearUsuarioEnBD:', error)
-      
-      // Solo crear fallback si tenemos email
-      if (email) {
-        setUsuario({
-          id: userId,
-          email: email,
-          nombre: email.split('@')[0] || 'Usuario',
-          rol: 'trabajador' as const,
-          activo: true,
-          sueldo_base: 0,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
-      }
-    }
-  }
-
-  const obtenerDatosUsuario = async (userId: string, userEmail?: string) => {
-    try {
-      console.log('🔍 Buscando usuario con ID:', userId)
-      console.log('📧 Email proporcionado:', userEmail)
-      
-      const { data, error } = await supabase
-        .from('usuarios')
-        .select('*')
-        .eq('id', userId)
-        .single()
-
-      console.log('📊 Respuesta de BD por ID:', { data, error })
-
-      if (data && !error) {
-        setUsuario(data)
-        console.log('✅ Usuario encontrado en BD por ID:', data)
-      } else {
-        console.log('❌ Usuario no encontrado por ID. Buscando por email...')
-        
-        // Usar el email proporcionado como parámetro, o el email del user como fallback
-        const emailParaBuscar = userEmail || user?.email
-        console.log('📧 Email para buscar:', emailParaBuscar)
-        
-        if (!emailParaBuscar) {
-          console.error('❌ No hay email para buscar usuario')
-          return // No crear usuario sin email
-        }
-        
-        // Verificar si existe por email
-        const { data: usuarioPorEmail, error: errorEmail } = await supabase
-          .from('usuarios')
-          .select('*')
-          .eq('email', emailParaBuscar)
-          .single()
-
-        console.log('📊 Respuesta de BD por email:', { usuarioPorEmail, errorEmail })
-
-        if (usuarioPorEmail && !errorEmail) {
-          console.log('✅ Usuario encontrado por email:', usuarioPorEmail)
-          console.log('⚠️ IMPORTANTE: Usando usuario existente, NO se puede cambiar el ID')
-          
-          // USAR EL USUARIO EXISTENTE TAL COMO ESTÁ
-          // No intentamos cambiar el ID porque es primary key
-          setUsuario(usuarioPorEmail)
-          
-          console.log('✅ Usuario establecido correctamente:', usuarioPorEmail)
-        } else {
-          console.log('❌ Usuario no encontrado por email tampoco, creando nuevo...')
-          await crearUsuarioEnBD(userId, emailParaBuscar)
-        }
-      }
-    } catch (error) {
-      console.error('Error obteniendo datos usuario:', error)
-      
-      // En caso de error, solo crear fallback si tenemos email
-      const emailParaFallback = userEmail || user?.email
-      if (emailParaFallback) {
-        setUsuario({
-          id: userId,
-          email: emailParaFallback,
-          nombre: emailParaFallback.split('@')[0] || 'Usuario',
-          rol: 'trabajador' as const,
-          activo: true,
-          sueldo_base: 0,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
-      }
+      setUsuario(createTempUser(userId, email))
     }
   }
 
@@ -218,7 +190,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })
     
     if (!error) {
-      // Mostrar mensaje de bienvenida por 3 segundos
       setShowWelcome(true)
       setTimeout(() => {
         setShowWelcome(false)
@@ -230,23 +201,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     try {
-      // Limpiar estados antes del logout
       setUser(null)
       setUsuario(null)
-      setUserProcessed(null)
       
-      // Ejecutar logout en Supabase
       const { error } = await supabase.auth.signOut()
       
       if (error) {
         console.error('Error en logout:', error)
       }
       
-      // Redirigir al login (independientemente del error)
       window.location.href = '/'
     } catch (error) {
       console.error('Error inesperado en logout:', error)
-      // En caso de error, forzar redirección
       window.location.href = '/'
     }
   }
@@ -254,15 +220,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const registrarIngreso = async () => {
     if (!user) return
 
-    // Obtener información del navegador
-    const userAgent = navigator.userAgent
-    
     try {
       await supabase
         .from('ingresos')
         .insert({
           usuario_id: user.id,
-          user_agent: userAgent,
+          user_agent: navigator.userAgent,
         })
     } catch (error) {
       console.error('Error registrando ingreso:', error)

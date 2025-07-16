@@ -39,10 +39,11 @@ const trabajadorMenuItems = [
 ]
 
 export default function Sidebar() {
-  const { usuario, signOut } = useAuth()
+  const { userData, signOut } = useAuth()
   const pathname = usePathname()
 
-  const menuItems = usuario?.rol === 'creador' ? adminMenuItems : trabajadorMenuItems
+  // Configurar items del menú según el rol
+  const menuItems = userData?.rol === 'creador' ? adminMenuItems : trabajadorMenuItems
 
   const handleSignOut = async () => {
     if (confirm('¿Estás seguro de que quieres cerrar sesión?')) {
@@ -60,14 +61,12 @@ export default function Sidebar() {
       {/* User Info */}
       <div className="p-4 border-b border-gray-700">
         <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center">
-            <span className="text-sm font-medium">
-              {usuario?.nombre.charAt(0).toUpperCase()}
-            </span>
+          <div className="flex items-center justify-center w-8 h-8 bg-blue-600 text-white rounded-full text-sm font-medium">
+            {userData?.nombre.charAt(0).toUpperCase()}
           </div>
-          <div>
-            <p className="text-sm font-medium">{usuario?.nombre}</p>
-            <p className="text-xs text-gray-400 capitalize">{usuario?.rol}</p>
+          <div className="ml-3">
+            <p className="text-sm font-medium">{userData?.nombre}</p>
+            <p className="text-xs text-gray-400 capitalize">{userData?.rol}</p>
           </div>
         </div>
       </div>

@@ -42,7 +42,7 @@ interface ImeiConUsuario extends ImeiJustificado {
 }
 
 export default function ImeiTrabajador() {
-  const { usuario } = useAuth()
+  const { userData } = useAuth()
   const [imeis, setImeis] = useState<ImeiConUsuario[]>([])
   const [usuarios, setUsuarios] = useState<Usuario[]>([])
   const [loading, setLoading] = useState(true)

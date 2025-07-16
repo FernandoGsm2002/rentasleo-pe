@@ -28,7 +28,7 @@ interface DashboardStats {
 }
 
 export default function AdminDashboard() {
-  const { usuario } = useAuth()
+  const { userData } = useAuth()
   const [stats, setStats] = useState<DashboardStats>({
     totalTrabajadores: 0,
     trabajadoresActivos: 0,
@@ -180,7 +180,7 @@ export default function AdminDashboard() {
           Dashboard Administrador
         </h1>
         <p className="text-gray-600 mt-1">
-          Bienvenido, {usuario?.nombre}. Aquí tienes un resumen del sistema.
+          Bienvenido, {userData?.nombre}. Aquí tienes un resumen del sistema.
         </p>
       </div>
 

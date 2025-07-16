@@ -4,26 +4,21 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useEffect } from 'react'
 
 export default function DashboardPage() {
-  const { user, usuario, loading } = useAuth()
+  const { user, userData, loading } = useAuth()
 
   useEffect(() => {
     // Si no hay usuario, redirigir al login
-    if (!loading && !user) {
+    if (!user && !loading) {
       window.location.href = '/'
       return
     }
 
-    // Si hay usuario pero no datos del usuario, esperar
-    if (user && !usuario) {
-      return
+    // Si tenemos usuario, redirigir según el rol
+    if (user && userData && !loading) {
+      const targetPath = userData.rol === 'creador' ? '/dashboard/admin' : '/dashboard/trabajador'
+      window.location.href = targetPath
     }
-
-    // Si tenemos todos los datos, redirigir al dashboard específico
-    if (user && usuario) {
-      const dashboardPath = usuario.rol === 'creador' ? '/dashboard/admin' : '/dashboard/trabajador'
-      window.location.href = dashboardPath
-    }
-  }, [user, usuario, loading])
+  }, [user, userData, loading])
 
   // Mostrar loading mientras se determina el destino
   return (

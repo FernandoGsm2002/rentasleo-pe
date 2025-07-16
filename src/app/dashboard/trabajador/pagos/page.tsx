@@ -37,7 +37,7 @@ interface PagoCalculado {
 }
 
 export default function PagosTrabajador() {
-  const { usuario } = useAuth()
+  const { userData } = useAuth()
   const [pagoMesActual, setPagoMesActual] = useState<PagoCalculado | null>(null)
   const [pagoMesAnterior, setPagoMesAnterior] = useState<PagoCalculado | null>(null)
   const [loading, setLoading] = useState(true)
@@ -46,13 +46,13 @@ export default function PagosTrabajador() {
   const supabase = createSupabaseBrowserClient()
 
   useEffect(() => {
-    if (usuario?.id) {
+    if (userData?.id) {
       loadPagos()
     }
-  }, [usuario?.id, mesSeleccionado, anioSeleccionado])
+  }, [userData?.id, mesSeleccionado, anioSeleccionado])
 
   const loadPagos = async () => {
-    if (!usuario?.id) return
+    if (!userData?.id) return
 
     try {
       // Mes actual seleccionado
@@ -60,7 +60,7 @@ export default function PagosTrabajador() {
       const finMes = new Date(anioSeleccionado, mesSeleccionado, 0).toISOString().split('T')[0]
 
       const { data: datosMesActual, error: errorMesActual } = await supabase.rpc('calcular_pago_trabajador', {
-        trabajador_id: usuario.id,
+        trabajador_id: userData.id,
         fecha_inicio: inicioMes,
         fecha_fin: finMes
       })
@@ -75,7 +75,7 @@ export default function PagosTrabajador() {
       const finMesAnterior = new Date(anioAnterior, mesAnterior, 0).toISOString().split('T')[0]
 
       const { data: datosMesAnterior, error: errorMesAnterior } = await supabase.rpc('calcular_pago_trabajador', {
-        trabajador_id: usuario.id,
+        trabajador_id: userData.id,
         fecha_inicio: inicioMesAnterior,
         fecha_fin: finMesAnterior
       })

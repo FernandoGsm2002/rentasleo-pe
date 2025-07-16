@@ -1,15 +1,21 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState, useRef } from 'react'
-import { User } from '@supabase/supabase-js'
-import { createSupabaseBrowserClient, checkSessionHealth, forceTokenRefresh } from '@/lib/supabase'
-import { Usuario } from '@/types/supabase'
+import React, { createContext, useContext, useEffect, useState } from 'react'
+import { createSupabaseBrowserClient } from '@/lib/supabase'
+import type { User } from '@supabase/supabase-js'
+
+interface UserData {
+  id: string
+  nombre: string
+  rol: string
+  email: string
+  sueldo_base: number
+}
 
 interface AuthContextType {
   user: User | null
-  usuario: Usuario | null
+  userData: UserData | null
   loading: boolean
-  signIn: (email: string, password: string) => Promise<{ error: any }>
   signOut: () => Promise<void>
 }
 
@@ -17,245 +23,93 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
-  const [usuario, setUsuario] = useState<Usuario | null>(null)
+  const [userData, setUserData] = useState<UserData | null>(null)
   const [loading, setLoading] = useState(true)
+
   const supabase = createSupabaseBrowserClient()
-  const sessionCheckInterval = useRef<NodeJS.Timeout | null>(null)
-  const isCheckingSession = useRef(false)
-
-  // Función para verificar y mantener la sesión activa
-  const maintainSession = async () => {
-    if (isCheckingSession.current) return
-    
-    try {
-      isCheckingSession.current = true
-      const { healthy, session } = await checkSessionHealth()
-      
-      if (!healthy && user) {
-        console.log('🔄 [Session Maintenance] Sesión no saludable, intentando refresh...')
-        const refreshResult = await forceTokenRefresh()
-        
-        if (!refreshResult.success) {
-          console.log('❌ [Session Maintenance] No se pudo refrescar token, cerrando sesión...')
-          await signOut()
-        } else {
-          console.log('✅ [Session Maintenance] Token refrescado exitosamente')
-        }
-      }
-    } catch (error) {
-      console.error('❌ [Session Maintenance] Error:', error)
-    } finally {
-      isCheckingSession.current = false
-    }
-  }
-
-  // Configurar verificación periódica de sesión
-  useEffect(() => {
-    // Verificar cada 5 minutos (300000ms)
-    sessionCheckInterval.current = setInterval(maintainSession, 5 * 60 * 1000)
-    
-    return () => {
-      if (sessionCheckInterval.current) {
-        clearInterval(sessionCheckInterval.current)
-      }
-    }
-  }, [user])
 
   useEffect(() => {
-    // Verificar sesión inicial
-    const getInitialSession = async () => {
+    // Función para cargar la sesión inicial
+    const loadSession = async () => {
       try {
-        console.log('🔐 [AuthProvider] Obteniendo sesión inicial...')
-        const { data: { session }, error } = await supabase.auth.getSession()
+        const { data: { session } } = await supabase.auth.getSession()
         
-        if (error) {
-          console.error('❌ [AuthProvider] Error obteniendo sesión:', error)
-        } else {
-          console.log('🔐 [AuthProvider] Sesión inicial:', session?.user?.email || 'Sin sesión')
-          setUser(session?.user ?? null)
-          
-          if (session?.user?.email) {
-            await obtenerUsuario(session.user.email)
-          }
+        if (session?.user) {
+          setUser(session.user)
+          await loadUserData(session.user.email!)
         }
       } catch (error) {
-        console.error('❌ [AuthProvider] Error en getInitialSession:', error)
+        console.error('❌ Error cargando sesión:', error)
       } finally {
         setLoading(false)
       }
     }
 
-    getInitialSession()
+    // Función para cargar datos del usuario desde la base de datos
+    const loadUserData = async (email: string) => {
+      try {
+        const { data, error } = await supabase
+          .from('usuarios')
+          .select('id, nombre, rol, email, sueldo_base')
+          .eq('email', email)
+          .single()
 
-    // Escuchar cambios de autenticación CON TODOS LOS EVENTOS
+        if (data && !error) {
+          setUserData(data)
+          console.log('✅ Usuario cargado:', data.nombre, 'Rol:', data.rol)
+        } else {
+          console.error('❌ Error cargando datos del usuario:', error)
+        }
+      } catch (error) {
+        console.error('❌ Error en loadUserData:', error)
+      }
+    }
+
+    // Cargar sesión inicial
+    loadSession()
+
+    // Escuchar cambios de autenticación
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('🔐 [AuthProvider] Auth event:', event, 'User:', session?.user?.email || 'None')
+        console.log('🔄 Auth event:', event)
         
-        // Manejar diferentes tipos de eventos
-        switch (event) {
-          case 'SIGNED_IN':
-            console.log('✅ [AuthProvider] Usuario logueado exitosamente')
-            setUser(session?.user ?? null)
-            if (session?.user?.email) {
-              await obtenerUsuario(session.user.email)
-              // Redirigir después del login exitoso
-              const urlParams = new URLSearchParams(window.location.search)
-              const redirectTo = urlParams.get('redirect') || '/dashboard'
-              console.log('🎯 [AuthProvider] Redirigiendo a:', redirectTo)
-              window.location.href = redirectTo
-            }
-            break
-
-          case 'SIGNED_OUT':
-            console.log('👋 [AuthProvider] Usuario deslogueado')
-            setUser(null)
-            setUsuario(null)
-            // Limpiar intervalo de verificación
-            if (sessionCheckInterval.current) {
-              clearInterval(sessionCheckInterval.current)
-              sessionCheckInterval.current = null
-            }
-            window.location.href = '/'
-            break
-
-          case 'TOKEN_REFRESHED':
-            console.log('🔄 [AuthProvider] Token refrescado exitosamente')
-            setUser(session?.user ?? null)
-            // Revalidar datos del usuario si es necesario
-            if (session?.user?.email && !usuario) {
-              await obtenerUsuario(session.user.email)
-            }
-            break
-
-          case 'USER_UPDATED':
-            console.log('👤 [AuthProvider] Usuario actualizado')
-            setUser(session?.user ?? null)
-            break
-
-          case 'PASSWORD_RECOVERY':
-            console.log('🔑 [AuthProvider] Recuperación de contraseña')
-            break
-
-          default:
-            console.log('🔐 [AuthProvider] Evento no manejado:', event)
-            setUser(session?.user ?? null)
-            if (session?.user?.email) {
-              await obtenerUsuario(session.user.email)
-            } else {
-              setUsuario(null)
-            }
+        if (session?.user) {
+          setUser(session.user)
+          await loadUserData(session.user.email!)
+        } else {
+          setUser(null)
+          setUserData(null)
         }
         
         setLoading(false)
       }
     )
 
-    return () => {
-      console.log('🔐 [AuthProvider] Limpiando suscripción de auth')
-      subscription.unsubscribe()
-      if (sessionCheckInterval.current) {
-        clearInterval(sessionCheckInterval.current)
-      }
-    }
+    return () => subscription.unsubscribe()
   }, [])
 
-  const obtenerUsuario = async (email: string) => {
-    try {
-      console.log('👤 [AuthProvider] Obteniendo datos del usuario:', email)
-      
-      const { data, error } = await supabase
-        .from('usuarios')
-        .select('*')
-        .eq('email', email)
-        .single()
-
-      if (error) {
-        console.error('❌ [AuthProvider] Error obteniendo usuario:', error)
-        throw error
-      }
-
-      if (data) {
-        console.log('✅ [AuthProvider] Usuario encontrado:', data.nombre, 'Rol:', data.rol)
-        setUsuario(data)
-      } else {
-        console.error('❌ [AuthProvider] Usuario no encontrado en la base de datos')
-        setUsuario(null)
-      }
-    } catch (error) {
-      console.error('❌ [AuthProvider] Error en obtenerUsuario:', error)
-      setUsuario(null)
-    }
-  }
-
-  const signIn = async (email: string, password: string) => {
-    console.log('🔑 [AuthProvider] Iniciando sesión para:', email)
-    
-    try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
-
-      if (error) {
-        console.error('❌ [AuthProvider] Error en login:', error.message)
-      } else {
-        console.log('✅ [AuthProvider] Login exitoso')
-      }
-
-      return { error }
-    } catch (error) {
-      console.error('❌ [AuthProvider] Error en signIn:', error)
-      return { error }
-    }
-  }
-
   const signOut = async () => {
-    console.log('🚪 [AuthProvider] Cerrando sesión...')
-    
+    setLoading(true)
     try {
-      // Limpiar intervalo de verificación inmediatamente
-      if (sessionCheckInterval.current) {
-        clearInterval(sessionCheckInterval.current)
-        sessionCheckInterval.current = null
-      }
-      
-      // Limpiar estado inmediatamente
+      await supabase.auth.signOut()
       setUser(null)
-      setUsuario(null)
-      
-      // Cerrar sesión en Supabase
-      const { error } = await supabase.auth.signOut()
-      
-      if (error) {
-        console.error('❌ [AuthProvider] Error cerrando sesión:', error)
-      } else {
-        console.log('✅ [AuthProvider] Sesión cerrada exitosamente')
-      }
-      
-      // Redirigir al login independientemente del resultado
+      setUserData(null)
       window.location.href = '/'
     } catch (error) {
-      console.error('❌ [AuthProvider] Error en signOut:', error)
-      // Incluso si hay error, redirigir al login
-      window.location.href = '/'
+      console.error('❌ Error en signOut:', error)
+    } finally {
+      setLoading(false)
     }
   }
 
   return (
-    <AuthContext.Provider value={{
-      user,
-      usuario,
-      loading,
-      signIn,
-      signOut,
-    }}>
+    <AuthContext.Provider value={{ user, userData, loading, signOut }}>
       {children}
     </AuthContext.Provider>
   )
 }
 
-export const useAuth = () => {
+export function useAuth() {
   const context = useContext(AuthContext)
   if (context === undefined) {
     throw new Error('useAuth must be used within an AuthProvider')

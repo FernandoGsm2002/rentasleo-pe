@@ -21,7 +21,7 @@ import {
 } from 'lucide-react'
 
 export default function HorariosTrabajador() {
-  const { usuario } = useAuth()
+  const { userData } = useAuth()
   const [estadoHoy, setEstadoHoy] = useState<EstadoMarcadoHoy | null>(null)
   const [resumenMes, setResumenMes] = useState<ResumenHorariosMes | null>(null)
   const [loading, setLoading] = useState(true)
@@ -29,10 +29,10 @@ export default function HorariosTrabajador() {
   const supabase = createSupabaseBrowserClient()
 
   useEffect(() => {
-    if (usuario?.id) {
+    if (userData?.id) {
       loadDashboardData()
     }
-  }, [usuario?.id])
+  }, [userData?.id])
 
   const loadDashboardData = async () => {
     try {
@@ -48,11 +48,11 @@ export default function HorariosTrabajador() {
   }
 
   const loadEstadoHoy = async () => {
-    if (!usuario?.id) return
+    if (!userData?.id) return
 
     try {
       const { data, error } = await supabase.rpc('get_marcado_hoy', {
-        trabajador_id: usuario.id
+        trabajador_id: userData.id
       })
 
       if (error) throw error
@@ -63,11 +63,11 @@ export default function HorariosTrabajador() {
   }
 
   const loadResumenMes = async () => {
-    if (!usuario?.id) return
+    if (!userData?.id) return
 
     try {
       const { data, error } = await supabase.rpc('get_resumen_horarios_mes', {
-        trabajador_id: usuario.id
+        trabajador_id: userData.id
       })
 
       if (error) throw error
@@ -78,12 +78,12 @@ export default function HorariosTrabajador() {
   }
 
   const marcarEntrada = async () => {
-    if (!usuario?.id || actionLoading) return
+    if (!userData?.id || actionLoading) return
 
     setActionLoading(true)
     try {
       const { data, error } = await supabase.rpc('marcar_entrada', {
-        trabajador_id: usuario.id
+        trabajador_id: userData.id
       })
 
       if (error) throw error
@@ -105,12 +105,12 @@ export default function HorariosTrabajador() {
   }
 
   const marcarSalida = async () => {
-    if (!usuario?.id || actionLoading) return
+    if (!userData?.id || actionLoading) return
 
     setActionLoading(true)
     try {
       const { data, error } = await supabase.rpc('marcar_salida', {
-        trabajador_id: usuario.id
+        trabajador_id: userData.id
       })
 
       if (error) throw error
@@ -172,7 +172,7 @@ export default function HorariosTrabajador() {
         </p>
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mt-3">
           <p className="text-sm text-amber-800">
-            <strong>⚠️ Importante:</strong> Solo recibes pago (S/. {usuario?.sueldo_base?.toFixed(2) || '0.00'}) por los días que marques TANTO entrada como salida. 
+            <strong>⚠️ Importante:</strong> Solo recibes pago (S/. {userData?.sueldo_base?.toFixed(2) || '0.00'}) por los días que marques TANTO entrada como salida. 
             Si olvidas marcar cualquiera de los dos, pierdes el pago de ese día.
           </p>
         </div>

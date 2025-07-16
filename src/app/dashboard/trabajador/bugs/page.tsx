@@ -35,7 +35,7 @@ interface BugConTotal extends BugSamsung {
 }
 
 export default function BugsTrabajador() {
-  const { usuario } = useAuth()
+  const { userData } = useAuth()
   const [bugs, setBugs] = useState<BugConTotal[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -58,13 +58,13 @@ export default function BugsTrabajador() {
   })
 
   useEffect(() => {
-    if (usuario?.id) {
+    if (userData?.id) {
       loadBugs()
     }
-  }, [usuario?.id, mesSeleccionado, anioSeleccionado])
+  }, [userData?.id, mesSeleccionado, anioSeleccionado])
 
   const loadBugs = async () => {
-    if (!usuario?.id) return
+    if (!userData?.id) return
 
     try {
       const inicioMes = new Date(anioSeleccionado, mesSeleccionado - 1, 1).toISOString().split('T')[0]
@@ -73,7 +73,7 @@ export default function BugsTrabajador() {
       const { data, error } = await supabase
         .from('bugs_samsung')
         .select('*')
-        .eq('usuario_id', usuario.id)
+        .eq('usuario_id', userData.id)
         .gte('fecha', inicioMes)
         .lte('fecha', finMes)
         .order('fecha', { ascending: false })
@@ -88,7 +88,7 @@ export default function BugsTrabajador() {
   }
 
   const onSubmit = async (data: BugFormData) => {
-    if (!usuario?.id) return
+    if (!userData?.id) return
 
     try {
       const fechaHoy = new Date().toISOString().split('T')[0]
@@ -112,7 +112,7 @@ export default function BugsTrabajador() {
         const { error } = await supabase
           .from('bugs_samsung')
           .insert({
-            usuario_id: usuario.id,
+            usuario_id: userData.id,
             fecha: fechaHoy,
             cantidad_bugs: data.cantidad_bugs,
             precio_por_bug: data.precio_por_bug,

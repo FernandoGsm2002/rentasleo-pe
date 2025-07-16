@@ -77,7 +77,7 @@ interface RentaConUsuario extends RentaHerramienta {
 }
 
 export default function RentasTrabajador() {
-  const { usuario } = useAuth()
+  const { userData } = useAuth()
   const [rentas, setRentas] = useState<RentaConUsuario[]>([])
   const [usuarios, setUsuarios] = useState<Usuario[]>([])
   const [loading, setLoading] = useState(true)
@@ -213,26 +213,16 @@ export default function RentasTrabajador() {
     }
 
     if (submitting) return
+    setSubmitting(true)
 
     try {
-      console.log('🔵 [1] Iniciando proceso de renta...')
-      setSubmitting(true)
-      console.log('🔵 [2] Estado submitting establecido en true')
       console.log('🚀 Iniciando renta para:', rentingLicense.nombre_herramienta)
 
       // Combinar fecha y hora seleccionadas
       const fechaInicio = new Date(`${selectedStartDate}T${selectedStartTime}`)
       const fechaFin = new Date(fechaInicio.getTime() + (selectedDuration * 60 * 60 * 1000))
 
-      console.log('🔵 [3] Fechas calculadas:', {
-        inicio: fechaInicio.toISOString(),
-        fin: fechaFin.toISOString(),
-        duracion: selectedDuration
-      })
-
-      console.log('🔵 [4] Preparando actualización de base de datos...')
-
-      const result = await supabase
+      const { error } = await supabase
         .from('rentas_herramientas')
         .update({
           duracion_horas: selectedDuration,
@@ -243,14 +233,11 @@ export default function RentasTrabajador() {
         })
         .eq('id', rentingLicense.id)
 
-      console.log('🔵 [5] Respuesta de la base de datos:', result)
-
-      if (result.error) {
-        console.error('🔴 [ERROR] Error en la actualización:', result.error)
-        throw result.error
+      if (error) {
+        console.error('❌ Error en la actualización:', error)
+        throw error
       }
 
-      console.log('🔵 [6] Actualización exitosa, mostrando toast...')
       console.log('✅ Renta iniciada exitosamente')
       addToast({
         type: 'success',
@@ -258,7 +245,7 @@ export default function RentasTrabajador() {
         message: `La renta de ${rentingLicense.nombre_herramienta} se inició correctamente`
       })
 
-      console.log('🔵 [7] Limpiando modales y estado...')
+      // Limpiar estado y cerrar modal
       setShowRentModal(false)
       setRentingLicense(null)
       setSelectedDuration(24)
@@ -266,22 +253,18 @@ export default function RentasTrabajador() {
       setSelectedStartDate('')
       setSelectedStartTime('')
       
-      console.log('🔵 [8] Iniciando recarga de rentas...')
-      await loadRentas()
-      console.log('🔵 [9] Recarga de rentas completada!')
+      // Recargar rentas
+      loadRentas()
       
     } catch (error) {
-      console.error('🔴 [ERROR] Error en startRent:', error)
-      simpleLog('startRent', error)
+      console.error('❌ Error en startRent:', error)
       addToast({
         type: 'error',
         title: 'Error al iniciar renta',
         message: 'No se pudo iniciar la renta. Por favor intenta nuevamente.'
       })
     } finally {
-      console.log('🔵 [10] Ejecutando finally, estableciendo submitting en false...')
       setSubmitting(false)
-      console.log('🔵 [11] Proceso completado!')
     }
   }
 

@@ -29,7 +29,7 @@ interface TrabajadorStats {
 }
 
 export default function TrabajadorDashboard() {
-  const { usuario } = useAuth()
+  const { userData } = useAuth()
   const [stats, setStats] = useState<TrabajadorStats>({
     diasTrabajados: 0,
     montoPendiente: 0,
@@ -44,13 +44,13 @@ export default function TrabajadorDashboard() {
   const supabase = createSupabaseBrowserClient()
 
   useEffect(() => {
-    if (usuario?.id) {
-      loadTrabajadorStats()
+    if (userData?.id) {
+      loadStats()
     }
-  }, [usuario?.id])
+  }, [userData?.id])
 
-  const loadTrabajadorStats = async () => {
-    if (!usuario?.id) return
+  const loadStats = async () => {
+    if (!userData?.id) return
 
     try {
       const hoy = new Date().toISOString().split('T')[0]
@@ -61,13 +61,13 @@ export default function TrabajadorDashboard() {
       const { count: diasTrabajados } = await supabase
         .from('dias_trabajados')
         .select('*', { count: 'exact', head: true })
-        .eq('usuario_id', usuario.id)
+        .eq('usuario_id', userData.id)
 
       // Monto pendiente de pago
       const { data: montosPendientes } = await supabase
         .from('dias_trabajados')
         .select('monto_asignado')
-        .eq('usuario_id', usuario.id)
+        .eq('usuario_id', userData.id)
         .eq('pagado', false)
 
       const montoPendiente = montosPendientes?.reduce(
@@ -78,7 +78,7 @@ export default function TrabajadorDashboard() {
       const { data: montosPagados } = await supabase
         .from('dias_trabajados')
         .select('monto_asignado')
-        .eq('usuario_id', usuario.id)
+        .eq('usuario_id', userData.id)
         .eq('pagado', true)
 
       const montoPagado = montosPagados?.reduce(
@@ -89,7 +89,7 @@ export default function TrabajadorDashboard() {
       const { count: ingresosHoy } = await supabase
         .from('ingresos')
         .select('*', { count: 'exact', head: true })
-        .eq('usuario_id', usuario.id)
+        .eq('usuario_id', userData.id)
         .gte('fecha_ingreso', hoy + 'T00:00:00')
         .lte('fecha_ingreso', hoy + 'T23:59:59')
 
@@ -97,21 +97,21 @@ export default function TrabajadorDashboard() {
       const { count: rentasActivas } = await supabase
         .from('rentas_herramientas')
         .select('*', { count: 'exact', head: true })
-        .eq('usuario_responsable_id', usuario.id)
+        .eq('usuario_responsable_id', userData.id)
         .eq('activa', true)
 
       // IMEIs procesados este mes
       const { count: imeisProcesados } = await supabase
         .from('imei_justificado')
         .select('*', { count: 'exact', head: true })
-        .eq('usuario_procesado_id', usuario.id)
+        .eq('usuario_procesado_id', userData.id)
         .gte('created_at', inicioMes.toISOString())
 
       // Bugs Samsung este mes
       const { data: bugsData } = await supabase
         .from('bugs_samsung')
         .select('cantidad_bugs, total_ganado')
-        .eq('usuario_id', usuario.id)
+        .eq('usuario_id', userData.id)
         .gte('fecha', inicioMes.toISOString().split('T')[0])
 
       const bugsSamsung = bugsData?.reduce(
@@ -142,10 +142,10 @@ export default function TrabajadorDashboard() {
   const statsCards = [
     {
       title: 'Mi Sueldo Diario',
-      value: `S/. ${usuario?.sueldo_base?.toFixed(2) || '0.00'}`,
+      value: `S/. ${userData?.sueldo_base?.toFixed(2) || '0.00'}`,
       icon: DollarSign,
       color: 'bg-emerald-500',
-      description: usuario?.sueldo_base === 0 ? 'Sin asignar' : 'Por día completo'
+      description: userData?.sueldo_base === 0 ? 'Sin asignar' : 'Por día completo'
     },
     {
       title: 'Días Trabajados',
@@ -214,7 +214,7 @@ export default function TrabajadorDashboard() {
           Mi Dashboard
         </h1>
         <p className="text-gray-600 mt-1">
-          Hola, {usuario?.nombre}. Aquí tienes tu resumen de actividad.
+          Hola, {userData?.nombre}. Aquí tienes tu resumen de actividad.
         </p>
       </div>
 

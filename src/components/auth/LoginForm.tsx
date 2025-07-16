@@ -2,136 +2,203 @@
 
 import { useState } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
-import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { z } from 'zod'
-import { Eye, EyeOff, LogIn } from 'lucide-react'
-
-const loginSchema = z.object({
-  email: z.string().email('Email inválido'),
-  password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres'),
-})
-
-type LoginFormData = z.infer<typeof loginSchema>
+import { diagnoseAuthIssues, checkSupabaseConnection } from '@/lib/supabase'
 
 export default function LoginForm() {
-  const [showPassword, setShowPassword] = useState(false)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [showDiagnostics, setShowDiagnostics] = useState(false)
+  const [diagnostics, setDiagnostics] = useState<any>(null)
   const { signIn } = useAuth()
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-    setError,
-  } = useForm<LoginFormData>({
-    resolver: zodResolver(loginSchema),
-  })
-
-  const onSubmit = async (data: LoginFormData) => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
     setLoading(true)
+
     try {
-      const { error } = await signIn(data.email, data.password)
+      console.log('🔐 Iniciando proceso de login...')
+      
+      // Verificar conexión antes del login
+      const connectionCheck = await checkSupabaseConnection()
+      if (!connectionCheck.connected) {
+        alert(`Error de conexión: ${connectionCheck.error}`)
+        return
+      }
+      
+      const { error } = await signIn(email, password)
       
       if (error) {
-        setError('root', {
-          message: error.message === 'Invalid login credentials' 
-            ? 'Credenciales inválidas' 
-            : 'Error al iniciar sesión'
-        })
+        console.error('❌ Error en login:', error)
+        
+        // Si hay error HTTP 406, mostrar diagnósticos
+        if (error.message?.includes('406') || error.code === 'invalid_request') {
+          console.log('🔍 Error 406 detectado, ejecutando diagnósticos...')
+          const diag = await diagnoseAuthIssues()
+          setDiagnostics(diag)
+          setShowDiagnostics(true)
+        }
+        
+        alert(error.message || 'Error en el login')
       }
     } catch (error) {
-      setError('root', {
-        message: 'Error inesperado'
-      })
+      console.error('❌ Excepción en login:', error)
+      alert('Error inesperado en el login')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const runDiagnostics = async () => {
+    setLoading(true)
+    try {
+      console.log('🔍 Ejecutando diagnósticos...')
+      const diag = await diagnoseAuthIssues()
+      setDiagnostics(diag)
+      setShowDiagnostics(true)
+    } catch (error) {
+      console.error('❌ Error en diagnósticos:', error)
+      alert('Error ejecutando diagnósticos')
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <div className="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-blue-100">
-            <LogIn className="h-6 w-6 text-blue-600" />
-          </div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Bienvenido a LEOPE-STAFF
-          </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
-            Sistema de Gestión y Rentas
-          </p>
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+      <div className="bg-white rounded-lg shadow-xl p-8 w-full max-w-md">
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">LEOPE Staff</h1>
+          <p className="text-gray-600">Sistema de Control de Trabajadores</p>
         </div>
-        
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit(onSubmit)}>
-          <div className="space-y-4">
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-                Email
-              </label>
-              <input
-                {...register('email')}
-                type="email"
-                autoComplete="email"
-                className="mt-1 appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="tu@email.com"
-              />
-              {errors.email && (
-                <p className="mt-1 text-sm text-red-600">{errors.email.message}</p>
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div>
+            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
+              Email
+            </label>
+            <input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              placeholder="usuario@leope.com"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
+              Contraseña
+            </label>
+            <input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              placeholder="••••••••"
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loading ? 'Iniciando sesión...' : 'Iniciar Sesión'}
+          </button>
+        </form>
+
+        {/* Botón de diagnósticos */}
+        <div className="mt-6 pt-6 border-t border-gray-200">
+          <button
+            onClick={runDiagnostics}
+            disabled={loading}
+            className="w-full bg-gray-600 text-white py-2 px-4 rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+          >
+            {loading ? 'Ejecutando...' : 'Diagnosticar Problemas'}
+          </button>
+        </div>
+
+        {/* Panel de diagnósticos */}
+        {showDiagnostics && diagnostics && (
+          <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="text-lg font-semibold text-gray-900">Diagnósticos</h3>
+              <button
+                onClick={() => setShowDiagnostics(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="space-y-3 text-sm">
+              <div>
+                <span className="font-medium">Ambiente:</span> {diagnostics.environment}
+              </div>
+              
+              <div>
+                <span className="font-medium">Configuración Supabase:</span>
+                <div className="ml-4">
+                  <div>URL: {diagnostics.supabaseUrl}</div>
+                  <div>Anon Key: {diagnostics.anonKey}</div>
+                </div>
+              </div>
+              
+              <div>
+                <span className="font-medium">Conexión:</span>
+                <div className="ml-4">
+                  {diagnostics.connection?.connected ? (
+                    <span className="text-green-600">✅ Conectado</span>
+                  ) : (
+                    <span className="text-red-600">❌ {diagnostics.connection?.error}</span>
+                  )}
+                </div>
+              </div>
+              
+              <div>
+                <span className="font-medium">Sesión:</span>
+                <div className="ml-4">
+                  {diagnostics.session?.exists ? (
+                    <div className="text-green-600">
+                      ✅ Sesión activa
+                      <div>Usuario: {diagnostics.session.userId}</div>
+                    </div>
+                  ) : diagnostics.session?.error ? (
+                    <span className="text-red-600">❌ {diagnostics.session.error}</span>
+                  ) : (
+                    <span className="text-yellow-600">⚠️ Sin sesión</span>
+                  )}
+                </div>
+              </div>
+              
+              {diagnostics.user && (
+                <div>
+                  <span className="font-medium">Usuario en BD:</span>
+                  <div className="ml-4">
+                    {diagnostics.user.found ? (
+                      <div className="text-green-600">
+                        ✅ Usuario encontrado
+                        <div>Rol: {diagnostics.user.data?.rol}</div>
+                        <div>Email: {diagnostics.user.data?.email}</div>
+                      </div>
+                    ) : (
+                      <span className="text-red-600">❌ {diagnostics.user.error}</span>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
             
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                Contraseña
-              </label>
-              <div className="mt-1 relative">
-                <input
-                  {...register('password')}
-                  type={showPassword ? 'text' : 'password'}
-                  autoComplete="current-password"
-                  className="appearance-none relative block w-full px-3 py-2 pr-10 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                  placeholder="Tu contraseña"
-                />
-                <button
-                  type="button"
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                  onClick={() => setShowPassword(!showPassword)}
-                >
-                  {showPassword ? (
-                    <EyeOff className="h-4 w-4 text-gray-400" />
-                  ) : (
-                    <Eye className="h-4 w-4 text-gray-400" />
-                  )}
-                </button>
-              </div>
-              {errors.password && (
-                <p className="mt-1 text-sm text-red-600">{errors.password.message}</p>
-              )}
+            <div className="mt-4 p-2 bg-gray-100 rounded text-xs">
+              <strong>Timestamp:</strong> {diagnostics.timestamp}
             </div>
           </div>
-
-          {errors.root && (
-            <div className="rounded-md bg-red-50 p-4">
-              <p className="text-sm text-red-800">{errors.root.message}</p>
-            </div>
-          )}
-
-          <div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? (
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-              ) : (
-                'Iniciar Sesión'
-              )}
-            </button>
-          </div>
-        </form>
+        )}
       </div>
     </div>
   )

@@ -23,11 +23,23 @@ export const createSupabaseBrowserClient = () => {
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true,
-      flowType: 'pkce'
+      flowType: 'pkce',
+      storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+      storageKey: 'sb-auth-token'
     },
     global: {
       headers: {
-        'X-Client-Info': 'leope-staff-web'
+        'X-Client-Info': 'leope-staff-web',
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      }
+    },
+    db: {
+      schema: 'public'
+    },
+    realtime: {
+      params: {
+        eventsPerSecond: 10
       }
     }
   })
@@ -50,7 +62,14 @@ export const createSupabaseServerClient = (cookieStore: any) => {
       },
       set(name: string, value: string, options: any) {
         try {
-          cookieStore.set({ name, value, ...options })
+          cookieStore.set({ 
+            name, 
+            value, 
+            ...options,
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax'
+          })
         } catch (error) {
           // Error al setear cookie en Server Component
           console.warn('Could not set cookie in server component:', error)
@@ -58,7 +77,12 @@ export const createSupabaseServerClient = (cookieStore: any) => {
       },
       remove(name: string, options: any) {
         try {
-          cookieStore.set({ name, value: '', ...options })
+          cookieStore.set({ 
+            name, 
+            value: '', 
+            ...options,
+            maxAge: 0
+          })
         } catch (error) {
           // Error al remover cookie en Server Component
           console.warn('Could not remove cookie in server component:', error)
@@ -67,7 +91,15 @@ export const createSupabaseServerClient = (cookieStore: any) => {
     },
     auth: {
       persistSession: true,
-      autoRefreshToken: true
+      autoRefreshToken: true,
+      flowType: 'pkce'
+    },
+    global: {
+      headers: {
+        'X-Client-Info': 'leope-staff-server',
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      }
     }
   })
 }
@@ -138,6 +170,8 @@ export const logError = (operation: string, error: any, context?: any) => {
     operation,
     error: error?.message || error,
     code: error?.code,
+    details: error?.details,
+    hint: error?.hint,
     context,
     url: typeof window !== 'undefined' ? window.location.href : 'server',
     userAgent: typeof window !== 'undefined' ? navigator.userAgent : 'server'
@@ -149,4 +183,86 @@ export const logError = (operation: string, error: any, context?: any) => {
   if (process.env.NODE_ENV === 'production') {
     // TODO: Integrar con servicio de logging (Sentry, LogRocket, etc.)
   }
+}
+
+// Función para verificar el estado de conexión de Supabase
+export const checkSupabaseConnection = async () => {
+  try {
+    const supabase = createSupabaseBrowserClient()
+    const { data, error } = await supabase.from('usuarios').select('count').limit(1)
+    
+    if (error) {
+      logError('checkSupabaseConnection', error)
+      return { 
+        connected: false, 
+        error: error.message,
+        code: error.code 
+      }
+    }
+    
+    return { 
+      connected: true, 
+      timestamp: new Date().toISOString() 
+    }
+  } catch (error) {
+    logError('checkSupabaseConnection', error)
+    return { 
+      connected: false, 
+      error: 'Network error or invalid configuration' 
+    }
+  }
+}
+
+// Función para diagnosticar problemas de autenticación
+export const diagnoseAuthIssues = async () => {
+  const results = {
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV,
+    supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL ? 'configured' : 'missing',
+    anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? 'configured' : 'missing',
+    connection: null as any,
+    session: null as any,
+    user: null as any
+  }
+
+  try {
+    // Verificar conexión
+    results.connection = await checkSupabaseConnection()
+    
+    // Verificar sesión
+    const supabase = createSupabaseBrowserClient()
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+    
+    if (sessionError) {
+      results.session = { error: sessionError.message, code: sessionError.name }
+    } else {
+      results.session = { 
+        exists: !!session, 
+        userId: session?.user?.id || null,
+        expiresAt: session?.expires_at || null
+      }
+    }
+    
+    // Verificar usuario en BD
+    if (session?.user?.id) {
+      const { data: userData, error: userError } = await supabase
+        .from('usuarios')
+        .select('id, email, nombre, rol, activo')
+        .eq('id', session.user.id)
+        .single()
+        
+      if (userError) {
+        results.user = { error: userError.message, code: userError.code }
+      } else {
+        results.user = { found: true, data: userData }
+      }
+    }
+    
+  } catch (error) {
+    logError('diagnoseAuthIssues', error)
+    results.session = { error: 'Failed to diagnose' }
+  }
+  
+  console.log('🔍 DIAGNÓSTICO DE AUTENTICACIÓN:', results)
+  return results
 } 

@@ -30,7 +30,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Obtener la sesión inicial
     const getSession = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession()
+        const { data: { session }, error } = await supabase.auth.getSession()
+        
+        if (error) {
+          console.error('Error obteniendo sesión:', error)
+          setLoading(false)
+          return
+        }
         
         if (!isMounted) return
 
@@ -54,6 +60,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (!isMounted) return
+
+        console.log('🔄 Auth state changed:', event, session?.user?.id)
 
         setUser(session?.user ?? null)
         
@@ -184,23 +192,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
-    
-    if (!error) {
-      setShowWelcome(true)
-      setTimeout(() => {
-        setShowWelcome(false)
-      }, 3000)
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
+      
+      if (!error && data.session) {
+        setShowWelcome(true)
+        setTimeout(() => {
+          setShowWelcome(false)
+        }, 3000)
+        
+        // Forzar actualización de sesión
+        window.location.href = '/dashboard'
+      }
+      
+      return { error }
+    } catch (error) {
+      console.error('Error en signIn:', error)
+      return { error }
     }
-    
-    return { error }
   }
 
   const signOut = async () => {
     try {
+      setLoading(true)
       setUser(null)
       setUsuario(null)
       
@@ -210,10 +227,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.error('Error en logout:', error)
       }
       
+      // Limpiar cookies y redirigir
+      document.cookie.split(";").forEach((c) => {
+        const eqPos = c.indexOf("=")
+        const name = eqPos > -1 ? c.substr(0, eqPos) : c
+        document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/"
+      })
+      
       window.location.href = '/'
     } catch (error) {
       console.error('Error inesperado en logout:', error)
       window.location.href = '/'
+    } finally {
+      setLoading(false)
     }
   }
 

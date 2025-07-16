@@ -2,7 +2,8 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
     "app/api/**/*.ts": {
-      "maxDuration": 30
+      "maxDuration": 30,
+      "memory": 1024
     }
   },
   "headers": [
@@ -20,6 +21,10 @@
         {
           "key": "Expires",
           "value": "0"
+        },
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex"
         }
       ]
     },
@@ -28,7 +33,15 @@
       "headers": [
         {
           "key": "Cache-Control",
-          "value": "no-cache, no-store, must-revalidate"
+          "value": "no-cache, no-store, must-revalidate, proxy-revalidate"
+        },
+        {
+          "key": "Pragma",
+          "value": "no-cache"
+        },
+        {
+          "key": "Expires",
+          "value": "0"
         },
         {
           "key": "X-Frame-Options",
@@ -37,8 +50,42 @@
         {
           "key": "X-Content-Type-Options",
           "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex"
         }
       ]
+    },
+    {
+      "source": "/((?!api|_next|dashboard).*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        }
+      ]
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/login",
+      "destination": "/",
+      "permanent": false
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/health",
+      "destination": "/api/health"
     }
   ]
 } 

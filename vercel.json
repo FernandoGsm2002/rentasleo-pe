@@ -1,6 +1,7 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
-    "src/app/**": {
+    "app/api/**/*.ts": {
       "maxDuration": 30
     }
   },
@@ -39,24 +40,5 @@
         }
       ]
     }
-  ],
-  "rewrites": [
-    {
-      "source": "/",
-      "destination": "/",
-      "has": [
-        {
-          "type": "cookie",
-          "key": "sb-rentas-auth-token"
-        }
-      ]
-    }
-  ],
-  "framework": {
-    "name": "nextjs"
-  },
-  "buildCommand": "npm run build",
-  "outputDirectory": ".next",
-  "installCommand": "npm install",
-  "devCommand": "npm run dev"
+  ]
 } 

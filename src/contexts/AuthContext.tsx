@@ -237,6 +237,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signIn = async (email: string, password: string) => {
     try {
       console.log('🔐 Intentando iniciar sesión...')
+      setLoading(true)
       
       const { data, error } = await withRetry(
         () => supabase.auth.signInWithPassword({
@@ -248,22 +249,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       )
       
       if (!error && data.session) {
-        console.log('✅ Login exitoso')
+        console.log('✅ Login exitoso - ID:', data.session.user.id)
+        console.log('📧 Email:', data.session.user.email)
+        
+        // Mostrar mensaje de bienvenida
         setShowWelcome(true)
+        
+        // El AuthContext se encargará de la redirección automática
+        // a través del useEffect cuando detecte el cambio de estado
+        console.log('🎯 Login completado, esperando redirección automática...')
+        
         setTimeout(() => {
           setShowWelcome(false)
-        }, 3000)
-        
-        // Redirigir a la página base del dashboard que manejará el rol
-        setTimeout(() => {
-          window.location.href = '/dashboard'
-        }, 1000)
+        }, 2500)
       } else {
+        setLoading(false)
         logError('signIn', error, { email })
       }
       
       return { error }
     } catch (error) {
+      setLoading(false)
       logError('signIn', error, { email })
       return { error }
     }

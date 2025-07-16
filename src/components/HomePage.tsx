@@ -2,12 +2,12 @@
 
 import { useAuth } from '@/contexts/AuthContext'
 import LoginForm from '@/components/auth/LoginForm'
-import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
+import { useSafeNavigation, getDashboardPath, logNavigation } from '@/lib/navigation'
 
 export default function HomePage() {
   const { user, usuario, loading, showWelcome } = useAuth()
-  const router = useRouter()
+  const { navigateTo } = useSafeNavigation()
 
   useEffect(() => {
     console.log('🏠 HomePage - Estado:', { 
@@ -18,15 +18,22 @@ export default function HomePage() {
         nombre: usuario.nombre,
         rol: usuario.rol
       } : null, 
-      loading
+      loading,
+      showWelcome
     })
     
-    // Si el usuario está autenticado y tenemos sus datos, redirigir al dashboard
-    if (user && usuario && !loading) {
+    // Solo redirigir si tenemos usuario completo, no estamos cargando y no estamos mostrando welcome
+    if (user && usuario && !loading && !showWelcome) {
       console.log('🔄 Usuario autenticado, redirigiendo al dashboard')
-      router.push('/dashboard')
+      console.log('👤 Rol del usuario:', usuario.rol)
+      
+      // Redirigir directamente al dashboard específico según el rol
+      const targetPath = getDashboardPath(usuario.rol)
+      logNavigation('HomePage', targetPath, 'Usuario autenticado')
+      
+      navigateTo(targetPath)
     }
-  }, [user, usuario, loading, router])
+  }, [user, usuario, loading, showWelcome, navigateTo])
 
   if (loading) {
     return (

@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { diagnoseAuthIssues, checkSupabaseConnection } from '@/lib/supabase'
+import { useNotify } from '@/components/ui/notification'
 
 export default function LoginForm() {
   const [email, setEmail] = useState('')
@@ -11,6 +12,7 @@ export default function LoginForm() {
   const [showDiagnostics, setShowDiagnostics] = useState(false)
   const [diagnostics, setDiagnostics] = useState<any>(null)
   const { signIn } = useAuth()
+  const notify = useNotify()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -22,7 +24,11 @@ export default function LoginForm() {
       // Verificar conexión antes del login
       const connectionCheck = await checkSupabaseConnection()
       if (!connectionCheck.connected) {
-        alert(`Error de conexión: ${connectionCheck.error}`)
+        notify.error(
+          'Error de conexión',
+          `No se pudo conectar con el servidor: ${connectionCheck.error}`,
+          { persistent: true }
+        )
         return
       }
       
@@ -37,13 +43,44 @@ export default function LoginForm() {
           const diag = await diagnoseAuthIssues()
           setDiagnostics(diag)
           setShowDiagnostics(true)
+          
+          notify.error(
+            'Error de autenticación',
+            'Se detectó un problema con la configuración. Revisa los diagnósticos.',
+            { duration: 8000 }
+          )
+        } else {
+          // Personalizar mensaje según el tipo de error
+          let title = 'Error de login'
+          let message = error.message || 'Error desconocido'
+          
+          if (error.message?.includes('Invalid login credentials')) {
+            title = 'Credenciales incorrectas'
+            message = 'Email o contraseña incorrectos. Verifica tus datos.'
+          } else if (error.message?.includes('Email not confirmed')) {
+            title = 'Email no confirmado'
+            message = 'Debes confirmar tu email antes de iniciar sesión.'
+          } else if (error.message?.includes('Too many requests')) {
+            title = 'Demasiados intentos'
+            message = 'Has hecho muchos intentos. Espera unos minutos e intenta de nuevo.'
+          }
+          
+          notify.error(title, message, { duration: 6000 })
         }
-        
-        alert(error.message || 'Error en el login')
+      } else {
+        notify.success(
+          'Login exitoso',
+          'Redirigiendo al dashboard...',
+          { duration: 3000 }
+        )
       }
     } catch (error) {
       console.error('❌ Excepción en login:', error)
-      alert('Error inesperado en el login')
+      notify.error(
+        'Error inesperado',
+        'Ocurrió un problema durante el login. Intenta nuevamente.',
+        { duration: 6000 }
+      )
     } finally {
       setLoading(false)
     }
@@ -58,7 +95,10 @@ export default function LoginForm() {
       setShowDiagnostics(true)
     } catch (error) {
       console.error('❌ Error en diagnósticos:', error)
-      alert('Error ejecutando diagnósticos')
+      notify.error(
+        'Error en diagnósticos',
+        'No se pudieron ejecutar los diagnósticos del sistema.'
+      )
     } finally {
       setLoading(false)
     }

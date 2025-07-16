@@ -165,45 +165,63 @@ export default function RentasTrabajador() {
 
   const onSubmit = async (data: RentaFormData) => {
     try {
-      const rentaData = {
+      const action = editingRenta ? 'update_license' : 'create_license'
+      const payload = {
+        action,
+        ...(editingRenta && { id: editingRenta.id }),
         nombre_herramienta: data.usuario_login, // Usamos el username como nombre
         tipo_herramienta: data.tipo_herramienta,
         usuario_login: data.usuario_login,
-        password_actual: data.password_actual,
-        duracion_horas: 0, // Sin duración inicial
-        fecha_inicio: new Date().toISOString(), // Fecha placeholder
-        fecha_fin: new Date().toISOString(), // Fecha placeholder  
-        usuario_responsable_id: null, // Sin responsable inicial
-        activa: false, // Inicia como disponible
-        costo: 0 // Sin costo, manejado externamente
+        password_actual: data.password_actual
       }
 
-      if (editingRenta) {
-        const { error } = await supabase
-          .from('rentas_herramientas')
-          .update(rentaData)
-          .eq('id', editingRenta.id)
+      console.log('💾 [CLIENT] Guardando licencia:', action)
+      
+      const response = await fetch('/api/rentas', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload)
+      })
 
-        if (error) throw error
-      } else {
-        const { error } = await supabase
-          .from('rentas_herramientas')
-          .insert(rentaData)
+      const result = await response.json()
 
-        if (error) throw error
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Error guardando licencia')
       }
 
+      console.log('✅ [CLIENT] Licencia guardada exitosamente')
+      
       setShowModal(false)
       setEditingRenta(null)
       reset()
       loadRentas()
-    } catch (error) {
-      console.error('Error guardando licencia:', error)
+      
+      addToast({
+        type: 'success',
+        title: editingRenta ? 'Licencia actualizada' : 'Licencia creada',
+        message: `${data.usuario_login} guardado exitosamente`
+      })
+      
+    } catch (error: any) {
+      console.error('❌ [CLIENT] Error guardando licencia:', error)
+      addToast({
+        type: 'error',
+        title: 'Error',
+        message: error?.message || 'Error guardando licencia'
+      })
     }
   }
 
   const startRent = async () => {
-    if (!rentingLicense || !selectedStartDate || !selectedStartTime) {
+    // Validaciones básicas
+    if (!rentingLicense) {
+      console.error('❌ No hay licencia seleccionada')
+      return
+    }
+
+    if (!selectedStartDate || !selectedStartTime) {
       addToast({
         type: 'warning',
         title: 'Campos requeridos',
@@ -212,58 +230,77 @@ export default function RentasTrabajador() {
       return
     }
 
-    if (submitting) return
+    // Prevenir múltiples clicks
+    if (submitting) {
+      console.log('⚠️ Ya hay una operación en progreso')
+      return
+    }
+
+    console.log('🚀 [CLIENT] Iniciando renta para:', rentingLicense.nombre_herramienta)
     setSubmitting(true)
 
     try {
-      console.log('🚀 Iniciando renta para:', rentingLicense.nombre_herramienta)
-
-      // Combinar fecha y hora seleccionadas
+      // Preparar datos
       const fechaInicio = new Date(`${selectedStartDate}T${selectedStartTime}`)
       const fechaFin = new Date(fechaInicio.getTime() + (selectedDuration * 60 * 60 * 1000))
+      
+      console.log('📅 [CLIENT] Fechas:', fechaInicio.toISOString(), '->', fechaFin.toISOString())
 
-      const { error } = await supabase
-        .from('rentas_herramientas')
-        .update({
+      // Llamar a la API route
+      console.log('🌐 [CLIENT] Llamando API route...')
+      const response = await fetch('/api/rentas', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'start_rent',
+          id: rentingLicense.id,
           duracion_horas: selectedDuration,
           fecha_inicio: fechaInicio.toISOString(),
           fecha_fin: fechaFin.toISOString(),
-          usuario_responsable_id: selectedResponsible || null,
-          activa: true
+          usuario_responsable_id: selectedResponsible || null
         })
-        .eq('id', rentingLicense.id)
-
-      if (error) {
-        console.error('❌ Error en la actualización:', error)
-        throw error
-      }
-
-      console.log('✅ Renta iniciada exitosamente')
-      addToast({
-        type: 'success',
-        title: 'Renta iniciada',
-        message: `La renta de ${rentingLicense.nombre_herramienta} se inició correctamente`
       })
 
-      // Limpiar estado y cerrar modal
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        console.error('❌ [CLIENT] Error de API:', result)
+        throw new Error(result.error || 'Error en la API')
+      }
+
+      console.log('✅ [CLIENT] Renta iniciada exitosamente')
+
+      // Cerrar modal y limpiar estado INMEDIATAMENTE
       setShowRentModal(false)
       setRentingLicense(null)
       setSelectedDuration(24)
       setSelectedResponsible('')
       setSelectedStartDate('')
       setSelectedStartTime('')
-      
-      // Recargar rentas
+
+      // Mostrar toast de éxito
+      addToast({
+        type: 'success',
+        title: '✅ Renta iniciada',
+        message: `${rentingLicense.nombre_herramienta} está activa`
+      })
+
+      // Recargar datos
+      console.log('🔄 [CLIENT] Recargando lista...')
       loadRentas()
+
+    } catch (error: any) {
+      console.error('❌ [CLIENT] Error en startRent:', error)
       
-    } catch (error) {
-      console.error('❌ Error en startRent:', error)
       addToast({
         type: 'error',
         title: 'Error al iniciar renta',
-        message: 'No se pudo iniciar la renta. Por favor intenta nuevamente.'
+        message: error?.message || 'Error desconocido. Intenta nuevamente.'
       })
     } finally {
+      console.log('🏁 [CLIENT] Limpiando estado')
       setSubmitting(false)
     }
   }
@@ -294,35 +331,81 @@ export default function RentasTrabajador() {
     if (!confirm('¿Estás seguro de eliminar esta licencia?')) return
 
     try {
-      const { error } = await supabase
-        .from('rentas_herramientas')
-        .delete()
-        .eq('id', id)
+      console.log('🗑️ [CLIENT] Eliminando licencia:', id)
+      
+      const response = await fetch('/api/rentas', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'delete_license',
+          id: id
+        })
+      })
 
-      if (error) throw error
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Error eliminando licencia')
+      }
+
+      console.log('✅ [CLIENT] Licencia eliminada exitosamente')
+      
+      addToast({
+        type: 'success',
+        title: 'Licencia eliminada',
+        message: 'La licencia fue eliminada correctamente'
+      })
+      
       loadRentas()
-    } catch (error) {
-      console.error('Error eliminando renta:', error)
+    } catch (error: any) {
+      console.error('❌ [CLIENT] Error eliminando licencia:', error)
+      addToast({
+        type: 'error',
+        title: 'Error',
+        message: error?.message || 'Error eliminando licencia'
+      })
     }
   }
 
   const stopRent = async (renta: RentaHerramienta) => {
     try {
-      const { error } = await supabase
-        .from('rentas_herramientas')
-        .update({ 
-          activa: false,
-          fecha_inicio: new Date().toISOString(), // Placeholder fecha
-          fecha_fin: new Date().toISOString(), // Placeholder fecha
-          duracion_horas: 0,
-          usuario_responsable_id: null
+      console.log('🛑 [CLIENT] Deteniendo renta:', renta.nombre_herramienta)
+      
+      const response = await fetch('/api/rentas', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'stop_rent',
+          id: renta.id
         })
-        .eq('id', renta.id)
+      })
 
-      if (error) throw error
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Error deteniendo renta')
+      }
+
+      console.log('✅ [CLIENT] Renta detenida exitosamente')
+      
+      addToast({
+        type: 'success',
+        title: 'Renta detenida',
+        message: `${renta.nombre_herramienta} está ahora disponible`
+      })
+      
       loadRentas()
-    } catch (error) {
-      console.error('Error deteniendo renta:', error)
+    } catch (error: any) {
+      console.error('❌ [CLIENT] Error deteniendo renta:', error)
+      addToast({
+        type: 'error',
+        title: 'Error',
+        message: error?.message || 'Error deteniendo renta'
+      })
     }
   }
 

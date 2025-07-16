@@ -1,19 +1,11 @@
 import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
+  // Configuración de external packages (movido desde experimental)
+  serverExternalPackages: ['@supabase/ssr', '@supabase/supabase-js'],
+
   // Configuración experimental para Next.js 15.4.1
   experimental: {
-    // Mejorar performance de compilación
-    turbo: {
-      rules: {
-        '*.svg': {
-          loaders: ['@svgr/webpack'],
-          as: '*.js',
-        },
-      },
-    },
-    // Optimizar para Vercel
-    serverComponentsExternalPackages: ['@supabase/ssr', '@supabase/supabase-js'],
     // Deshabilitar features que pueden causar 103 Early Hints
     ppr: false,
   },
@@ -37,16 +29,8 @@ const nextConfig: NextConfig = {
             value: 'on'
           },
           {
-            key: 'Strict-Transport-Security',
-            value: 'max-age=63072000; includeSubDomains; preload'
-          },
-          {
             key: 'X-XSS-Protection',
             value: '1; mode=block'
-          },
-          {
-            key: 'Permissions-Policy',
-            value: 'camera=(), microphone=(), geolocation=()'
           }
         ],
       },
@@ -100,52 +84,6 @@ const nextConfig: NextConfig = {
 
   // Configuración de output para Vercel
   output: 'standalone',
-
-  // Configuración de webpack
-  webpack: (config, { isServer }) => {
-    // Resolver problemas con Supabase en el servidor
-    if (isServer) {
-      config.externals.push({
-        '@supabase/ssr': '@supabase/ssr',
-        '@supabase/supabase-js': '@supabase/supabase-js'
-      })
-    }
-
-    // Optimizar bundles
-    config.optimization.splitChunks = {
-      chunks: 'all',
-      cacheGroups: {
-        vendor: {
-          test: /[\\/]node_modules[\\/]/,
-          name: 'vendors',
-          chunks: 'all',
-        },
-        supabase: {
-          test: /[\\/]node_modules[\\/]@supabase[\\/]/,
-          name: 'supabase',
-          chunks: 'all',
-        },
-      },
-    }
-
-    return config
-  },
-
-  // Configuración de variables de entorno
-  env: {
-    CUSTOM_KEY: 'vercel-production',
-  },
-
-  // Configurar páginas que pueden causar problemas de SSR
-  pageExtensions: ['tsx', 'ts', 'jsx', 'js'],
-
-  // Configuración de desarrollo
-  ...(process.env.NODE_ENV === 'development' && {
-    devIndicators: {
-      buildActivity: true,
-      buildActivityPosition: 'bottom-right',
-    },
-  }),
 
   // Configuración de producción específica para Vercel
   ...(process.env.NODE_ENV === 'production' && {

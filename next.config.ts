@@ -1,10 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  experimental: {
-    // Optimización para SSR con cookies
-    serverComponentsExternalPackages: ['@supabase/ssr']
-  },
+  // Optimización para SSR con cookies
+  serverExternalPackages: ['@supabase/ssr'],
   // Optimizaciones para producción
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production' ? {

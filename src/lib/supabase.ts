@@ -1,6 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
 import { createBrowserClient, createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
 import { Database } from '@/types/supabase'
 
 let supabaseBrowserClient: ReturnType<typeof createBrowserClient<Database>> | null = null
@@ -23,9 +22,8 @@ export const createSupabaseBrowserClient = () => {
   return supabaseBrowserClient
 }
 
-// Cliente para el servidor con soporte de cookies
-export const createSupabaseServerClient = async () => {
-  const cookieStore = await cookies()
+// Función helper para crear cliente del servidor (usar solo en Server Components)
+export const createSupabaseServerClient = (cookieStore: any) => {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 

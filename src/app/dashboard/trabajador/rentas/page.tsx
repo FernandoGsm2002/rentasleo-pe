@@ -29,6 +29,8 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useAuth } from '@/contexts/AuthContext'
+import { useToast } from '@/components/ui/toast'
+import { withRetry, logError } from '@/lib/supabase'
 
 // Herramientas predefinidas
 const HERRAMIENTAS_DISPONIBLES = [
@@ -82,7 +84,9 @@ export default function RentasTrabajador() {
   const [selectedStartTime, setSelectedStartTime] = useState<string>('')
   const [selectedLicenses, setSelectedLicenses] = useState<Set<string>>(new Set())
   const [showScriptModal, setShowScriptModal] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
   const supabase = createSupabaseBrowserClient()
+  const { addToast } = useToast()
 
   const {
     register,
@@ -178,27 +182,52 @@ export default function RentasTrabajador() {
 
   const startRent = async () => {
     if (!rentingLicense || !selectedStartDate || !selectedStartTime) {
-      alert('Por favor selecciona fecha y hora de inicio')
+      addToast({
+        type: 'warning',
+        title: 'Campos requeridos',
+        message: 'Por favor selecciona fecha y hora de inicio'
+      })
       return
     }
 
+    if (submitting) return
+
     try {
+      setSubmitting(true)
+      console.log('🚀 Iniciando renta para:', rentingLicense.nombre_herramienta)
+
       // Combinar fecha y hora seleccionadas
       const fechaInicio = new Date(`${selectedStartDate}T${selectedStartTime}`)
       const fechaFin = new Date(fechaInicio.getTime() + (selectedDuration * 60 * 60 * 1000))
 
-      const { error } = await supabase
-        .from('rentas_herramientas')
-        .update({
-          duracion_horas: selectedDuration,
-          fecha_inicio: fechaInicio.toISOString(),
-          fecha_fin: fechaFin.toISOString(),
-          usuario_responsable_id: selectedResponsible || null,
-          activa: true
-        })
-        .eq('id', rentingLicense.id)
+      const result = await withRetry(
+        async () => {
+          const response = await supabase
+            .from('rentas_herramientas')
+            .update({
+              duracion_horas: selectedDuration,
+              fecha_inicio: fechaInicio.toISOString(),
+              fecha_fin: fechaFin.toISOString(),
+              usuario_responsable_id: selectedResponsible || null,
+              activa: true
+            })
+            .eq('id', rentingLicense.id)
+          return response
+        },
+        3,
+        1000
+      )
 
-      if (error) throw error
+      if (result.error) {
+        throw result.error
+      }
+
+      console.log('✅ Renta iniciada exitosamente')
+      addToast({
+        type: 'success',
+        title: 'Renta iniciada',
+        message: `La renta de ${rentingLicense.nombre_herramienta} se inició correctamente`
+      })
 
       setShowRentModal(false)
       setRentingLicense(null)
@@ -206,9 +235,16 @@ export default function RentasTrabajador() {
       setSelectedResponsible('')
       setSelectedStartDate('')
       setSelectedStartTime('')
-      loadRentas()
+      await loadRentas()
     } catch (error) {
-      console.error('Error iniciando renta:', error)
+      logError('startRent', error, { licenseId: rentingLicense?.id, selectedDuration })
+      addToast({
+        type: 'error',
+        title: 'Error al iniciar renta',
+        message: 'No se pudo iniciar la renta. Por favor intenta nuevamente.'
+      })
+    } finally {
+      setSubmitting(false)
     }
   }
 

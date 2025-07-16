@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState } from 'react'
 import { User } from '@supabase/supabase-js'
-import { createSupabaseBrowserClient } from '@/lib/supabase'
+import { createSupabaseBrowserClient, withRetry, logError } from '@/lib/supabase'
 import { Usuario } from '@/types/supabase'
 
 interface AuthContextType {
@@ -27,14 +27,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let isMounted = true
 
-    // Obtener la sesión inicial
+    // Obtener la sesión inicial con retry
     const getSession = async () => {
       try {
         console.log('🔄 Obteniendo sesión inicial...')
-        const { data: { session }, error } = await supabase.auth.getSession()
+        
+        const { data: { session }, error } = await withRetry(
+          () => supabase.auth.getSession(),
+          3,
+          1000
+        )
         
         if (error) {
-          console.error('❌ Error obteniendo sesión:', error)
+          logError('getSession', error)
           if (isMounted) {
             setLoading(false)
           }
@@ -53,7 +58,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.log('🚫 Sin sesión activa')
         }
       } catch (error) {
-        console.error('💥 Error obteniendo sesión:', error)
+        logError('getSession', error)
       } finally {
         if (isMounted) {
           console.log('✅ Carga inicial completada')
@@ -99,16 +104,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('🔍 Buscando usuario con ID:', userId)
       console.log('📧 Email proporcionado:', userEmail)
       
-      // Primero buscar por ID
-      const { data, error } = await supabase
-        .from('usuarios')
-        .select('*')
-        .eq('id', userId)
-        .single()
+      // Primero buscar por ID con retry
+      const result = await withRetry(
+        async () => {
+          const response = await supabase
+            .from('usuarios')
+            .select('*')
+            .eq('id', userId)
+            .single()
+          return response
+        },
+        2,
+        500
+      )
 
-      if (data && !error) {
-        setUsuario(data)
-        console.log('✅ Usuario encontrado por ID:', { nombre: data.nombre, rol: data.rol })
+      if (result.data && !result.error) {
+        setUsuario(result.data)
+        console.log('✅ Usuario encontrado por ID:', { nombre: result.data.nombre, rol: result.data.rol })
         return
       }
 
@@ -116,15 +128,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Si no se encuentra por ID, buscar por email
       if (userEmail) {
-        const { data: usuarioPorEmail, error: errorEmail } = await supabase
-          .from('usuarios')
-          .select('*')
-          .eq('email', userEmail)
-          .single()
+        const emailResult = await withRetry(
+          async () => {
+            const response = await supabase
+              .from('usuarios')
+              .select('*')
+              .eq('email', userEmail)
+              .single()
+            return response
+          },
+          2,
+          500
+        )
 
-        if (usuarioPorEmail && !errorEmail) {
-          setUsuario(usuarioPorEmail)
-          console.log('✅ Usuario encontrado por email:', { nombre: usuarioPorEmail.nombre, rol: usuarioPorEmail.rol })
+        if (emailResult.data && !emailResult.error) {
+          setUsuario(emailResult.data)
+          console.log('✅ Usuario encontrado por email:', { nombre: emailResult.data.nombre, rol: emailResult.data.rol })
           return
         }
       }
@@ -140,7 +159,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUsuario(createTempUser(userId))
       }
     } catch (error) {
-      console.error('💥 Error obteniendo datos usuario:', error)
+      logError('obtenerDatosUsuario', error, { userId, userEmail })
       // En caso de error, crear usuario temporal
       setUsuario(createTempUser(userId, userEmail))
     }
@@ -174,16 +193,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       console.log('🚀 Creando nuevo usuario en BD:', nuevoUsuario)
 
-      const { data, error } = await supabase
-        .from('usuarios')
-        .insert(nuevoUsuario)
-        .select()
-        .single()
+      const result = await withRetry(
+        async () => {
+          const response = await supabase
+            .from('usuarios')
+            .insert(nuevoUsuario)
+            .select()
+            .single()
+          return response
+        },
+        2,
+        1000
+      )
 
-      if (data && !error) {
-        setUsuario(data)
-        console.log('✅ Usuario creado exitosamente:', { nombre: data.nombre, rol: data.rol })
-      } else if (error?.code === '23505') {
+      if (result.data && !result.error) {
+        setUsuario(result.data)
+        console.log('✅ Usuario creado exitosamente:', { nombre: result.data.nombre, rol: result.data.rol })
+      } else if (result.error?.code === '23505') {
         console.log('⚠️ Usuario ya existe, buscando nuevamente...')
         // Usuario ya existe, buscar nuevamente
         const { data: usuarioExistente } = await supabase
@@ -199,11 +225,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUsuario(createTempUser(userId, email))
         }
       } else {
-        console.error('❌ Error creando usuario:', error)
+        logError('crearUsuarioEnBD', result.error, { userId, email })
         setUsuario(createTempUser(userId, email))
       }
     } catch (error) {
-      console.error('💥 Error en crearUsuarioEnBD:', error)
+      logError('crearUsuarioEnBD', error, { userId, email })
       setUsuario(createTempUser(userId, email))
     }
   }
@@ -211,10 +237,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signIn = async (email: string, password: string) => {
     try {
       console.log('🔐 Intentando iniciar sesión...')
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
+      
+      const { data, error } = await withRetry(
+        () => supabase.auth.signInWithPassword({
+          email,
+          password,
+        }),
+        2,
+        1000
+      )
       
       if (!error && data.session) {
         console.log('✅ Login exitoso')
@@ -228,12 +259,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           window.location.href = '/dashboard'
         }, 1000)
       } else {
-        console.error('❌ Error en login:', error)
+        logError('signIn', error, { email })
       }
       
       return { error }
     } catch (error) {
-      console.error('💥 Error en signIn:', error)
+      logError('signIn', error, { email })
       return { error }
     }
   }
@@ -248,7 +279,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { error } = await supabase.auth.signOut()
       
       if (error) {
-        console.error('❌ Error en logout:', error)
+        logError('signOut', error)
       } else {
         console.log('✅ Logout exitoso')
       }
@@ -262,7 +293,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       window.location.href = '/'
     } catch (error) {
-      console.error('💥 Error inesperado en logout:', error)
+      logError('signOut', error)
       window.location.href = '/'
     } finally {
       setLoading(false)
@@ -274,15 +305,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     try {
       console.log('📝 Registrando ingreso...')
-      await supabase
-        .from('ingresos')
-        .insert({
-          usuario_id: user.id,
-          user_agent: navigator.userAgent,
-        })
+      await withRetry(
+        async () => {
+          const response = await supabase
+            .from('ingresos')
+            .insert({
+              usuario_id: user.id,
+              user_agent: navigator.userAgent,
+            })
+          return response
+        },
+        2,
+        500
+      )
       console.log('✅ Ingreso registrado')
     } catch (error) {
-      console.error('❌ Error registrando ingreso:', error)
+      logError('registrarIngreso', error, { userId: user.id })
     }
   }
 

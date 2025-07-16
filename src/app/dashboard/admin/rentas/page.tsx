@@ -28,6 +28,8 @@ import {
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { useToast } from '@/components/ui/toast'
+import { withRetry, logError } from '@/lib/supabase'
 
 // Herramientas predefinidas
 const HERRAMIENTAS_DISPONIBLES = [
@@ -80,7 +82,9 @@ export default function RentasAdmin() {
   const [selectedStartTime, setSelectedStartTime] = useState<string>('')
   const [selectedLicenses, setSelectedLicenses] = useState<Set<string>>(new Set())
   const [showScriptModal, setShowScriptModal] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
   const supabase = createSupabaseBrowserClient()
+  const { addToast } = useToast()
 
   const {
     register,
@@ -102,18 +106,35 @@ export default function RentasAdmin() {
 
   const loadRentas = async () => {
     try {
-      const { data, error } = await supabase
-        .from('rentas_herramientas')
-        .select(`
-          *,
-          usuario_responsable:usuarios(*)
-        `)
-        .order('created_at', { ascending: false })
+      console.log('📋 Cargando rentas...')
+      const result = await withRetry(
+        async () => {
+          const response = await supabase
+            .from('rentas_herramientas')
+            .select(`
+              *,
+              usuario_responsable:usuarios(*)
+            `)
+            .order('created_at', { ascending: false })
+          return response
+        },
+        3,
+        1000
+      )
 
-      if (error) throw error
-      setRentas(data || [])
+      if (result.error) {
+        throw result.error
+      }
+      
+      setRentas(result.data || [])
+      console.log('✅ Rentas cargadas:', result.data?.length || 0)
     } catch (error) {
-      console.error('Error cargando rentas:', error)
+      logError('loadRentas', error)
+      addToast({
+        type: 'error',
+        title: 'Error al cargar rentas',
+        message: 'No se pudieron cargar las rentas. Intenta recargar la página.'
+      })
     } finally {
       setLoading(false)
     }
@@ -136,7 +157,12 @@ export default function RentasAdmin() {
   }
 
   const onSubmit = async (data: RentaFormData) => {
+    if (submitting) return
+    
     try {
+      setSubmitting(true)
+      console.log('💾 Guardando licencia:', data.usuario_login)
+
       const rentaData = {
         nombre_herramienta: data.usuario_login, // Usamos el username como nombre
         tipo_herramienta: data.tipo_herramienta,
@@ -151,52 +177,110 @@ export default function RentasAdmin() {
       }
 
       if (editingRenta) {
-        const { error } = await supabase
-          .from('rentas_herramientas')
-          .update(rentaData)
-          .eq('id', editingRenta.id)
+        const result = await withRetry(
+          async () => {
+            const response = await supabase
+              .from('rentas_herramientas')
+              .update(rentaData)
+              .eq('id', editingRenta.id)
+            return response
+          },
+          2,
+          1000
+        )
 
-        if (error) throw error
+        if (result.error) throw result.error
+        
+        addToast({
+          type: 'success',
+          title: 'Licencia actualizada',
+          message: `La licencia ${data.usuario_login} se actualizó correctamente`
+        })
       } else {
-        const { error } = await supabase
-          .from('rentas_herramientas')
-          .insert(rentaData)
+        const result = await withRetry(
+          async () => {
+            const response = await supabase
+              .from('rentas_herramientas')
+              .insert(rentaData)
+            return response
+          },
+          2,
+          1000
+        )
 
-        if (error) throw error
+        if (result.error) throw result.error
+        
+        addToast({
+          type: 'success',
+          title: 'Licencia creada',
+          message: `La licencia ${data.usuario_login} se creó correctamente`
+        })
       }
 
       setShowModal(false)
       setEditingRenta(null)
       reset()
-      loadRentas()
+      await loadRentas()
     } catch (error) {
-      console.error('Error guardando licencia:', error)
+      logError('onSubmit', error, { isEditing: !!editingRenta, data })
+      addToast({
+        type: 'error',
+        title: editingRenta ? 'Error al actualizar' : 'Error al crear',
+        message: 'No se pudo guardar la licencia. Por favor intenta nuevamente.'
+      })
+    } finally {
+      setSubmitting(false)
     }
   }
 
   const startRent = async () => {
     if (!rentingLicense || !selectedStartDate || !selectedStartTime) {
-      alert('Por favor selecciona fecha y hora de inicio')
+      addToast({
+        type: 'warning',
+        title: 'Campos requeridos',
+        message: 'Por favor selecciona fecha y hora de inicio'
+      })
       return
     }
 
+    if (submitting) return
+
     try {
+      setSubmitting(true)
+      console.log('🚀 Iniciando renta para:', rentingLicense.nombre_herramienta)
+
       // Combinar fecha y hora seleccionadas
       const fechaInicio = new Date(`${selectedStartDate}T${selectedStartTime}`)
       const fechaFin = new Date(fechaInicio.getTime() + (selectedDuration * 60 * 60 * 1000))
 
-      const { error } = await supabase
-        .from('rentas_herramientas')
-        .update({
-          duracion_horas: selectedDuration,
-          fecha_inicio: fechaInicio.toISOString(),
-          fecha_fin: fechaFin.toISOString(),
-          usuario_responsable_id: selectedResponsible || null,
-          activa: true
-        })
-        .eq('id', rentingLicense.id)
+      const result = await withRetry(
+        async () => {
+          const response = await supabase
+            .from('rentas_herramientas')
+            .update({
+              duracion_horas: selectedDuration,
+              fecha_inicio: fechaInicio.toISOString(),
+              fecha_fin: fechaFin.toISOString(),
+              usuario_responsable_id: selectedResponsible || null,
+              activa: true
+            })
+            .eq('id', rentingLicense.id)
+          return response
+        },
+        3,
+        1000
+      )
 
-      if (error) throw error
+      if (result.error) {
+        throw result.error
+      }
+
+      console.log('✅ Renta iniciada exitosamente')
+      addToast({
+        type: 'success',
+        title: 'Renta iniciada',
+        message: `La renta de ${rentingLicense.nombre_herramienta} se inició correctamente`
+      })
 
       setShowRentModal(false)
       setRentingLicense(null)
@@ -204,9 +288,16 @@ export default function RentasAdmin() {
       setSelectedResponsible('')
       setSelectedStartDate('')
       setSelectedStartTime('')
-      loadRentas()
+      await loadRentas()
     } catch (error) {
-      console.error('Error iniciando renta:', error)
+      logError('startRent', error, { licenseId: rentingLicense?.id, selectedDuration })
+      addToast({
+        type: 'error',
+        title: 'Error al iniciar renta',
+        message: 'No se pudo iniciar la renta. Por favor intenta nuevamente.'
+      })
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -233,18 +324,42 @@ export default function RentasAdmin() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('¿Estás seguro de eliminar esta licencia?')) return
+    const licencia = rentas.find(r => r.id === id)
+    const confirmed = window.confirm(`¿Estás seguro de eliminar la licencia ${licencia?.nombre_herramienta || 'seleccionada'}?`)
+    
+    if (!confirmed) return
 
     try {
-      const { error } = await supabase
-        .from('rentas_herramientas')
-        .delete()
-        .eq('id', id)
+      console.log('🗑️ Eliminando licencia:', id)
+      
+      const result = await withRetry(
+        async () => {
+          const response = await supabase
+            .from('rentas_herramientas')
+            .delete()
+            .eq('id', id)
+          return response
+        },
+        2,
+        1000
+      )
 
-      if (error) throw error
-      loadRentas()
+      if (result.error) throw result.error
+      
+      addToast({
+        type: 'success',
+        title: 'Licencia eliminada',
+        message: `La licencia ${licencia?.nombre_herramienta || ''} se eliminó correctamente`
+      })
+      
+      await loadRentas()
     } catch (error) {
-      console.error('Error eliminando renta:', error)
+      logError('handleDelete', error, { id })
+      addToast({
+        type: 'error',
+        title: 'Error al eliminar',
+        message: 'No se pudo eliminar la licencia. Por favor intenta nuevamente.'
+      })
     }
   }
 
@@ -877,9 +992,17 @@ export default function RentasAdmin() {
               <div className="flex space-x-3 pt-4">
                 <button
                   type="submit"
-                  className="flex-1 bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 font-medium transition-colors"
+                  disabled={submitting}
+                  className="flex-1 bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {editingRenta ? '✅ Actualizar Licencia' : '➕ Crear Licencia'}
+                  {submitting ? (
+                    <div className="flex items-center justify-center space-x-2">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      <span>{editingRenta ? 'Actualizando...' : 'Creando...'}</span>
+                    </div>
+                  ) : (
+                    editingRenta ? '✅ Actualizar Licencia' : '➕ Crear Licencia'
+                  )}
                 </button>
                 <button
                   type="button"
@@ -1023,9 +1146,17 @@ export default function RentasAdmin() {
               <div className="flex space-x-3 pt-4">
                 <button
                   onClick={startRent}
-                  className="flex-1 bg-green-600 text-white py-3 px-4 rounded-md hover:bg-green-700 font-medium transition-colors"
+                  disabled={submitting}
+                  className="flex-1 bg-green-600 text-white py-3 px-4 rounded-md hover:bg-green-700 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  🚀 Iniciar Renta
+                  {submitting ? (
+                    <div className="flex items-center justify-center space-x-2">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      <span>Iniciando...</span>
+                    </div>
+                  ) : (
+                    '🚀 Iniciar Renta'
+                  )}
                 </button>
                 <button
                   onClick={() => {

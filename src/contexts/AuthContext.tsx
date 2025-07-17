@@ -29,63 +29,114 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const supabase = createSupabaseBrowserClient()
 
   useEffect(() => {
-    // Función para cargar la sesión inicial
-    const loadSession = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession()
-        
-        if (session?.user) {
-          setUser(session.user)
-          await loadUserData(session.user.email!)
-        }
-      } catch (error) {
-        console.error('❌ Error cargando sesión:', error)
-      } finally {
-        setLoading(false)
-      }
-    }
+    let isMounted = true
+    let sessionLoaded = false
 
     // Función para cargar datos del usuario desde la base de datos
     const loadUserData = async (email: string) => {
+      if (!isMounted) return null
+      
       try {
-        const { data, error } = await supabase
+        console.log('🔍 [AUTH] Cargando datos para:', email)
+        
+        // Timeout de 5 segundos para evitar cuelgues
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Timeout cargando usuario')), 5000)
+        })
+        
+        const dataPromise = supabase
           .from('usuarios')
           .select('id, nombre, rol, email, sueldo_base')
           .eq('email', email)
           .single()
 
-        if (data && !error) {
+        const { data, error } = await Promise.race([dataPromise, timeoutPromise]) as any
+
+        if (data && !error && isMounted) {
           setUserData(data)
-          console.log('✅ Usuario cargado:', data.nombre, 'Rol:', data.rol)
+          console.log('✅ [AUTH] Usuario cargado:', data.nombre, 'Rol:', data.rol)
+          return data
         } else {
-          console.error('❌ Error cargando datos del usuario:', error)
+          console.error('❌ [AUTH] Error cargando datos:', error)
+          return null
         }
       } catch (error) {
-        console.error('❌ Error en loadUserData:', error)
+        console.error('❌ [AUTH] Error en loadUserData:', error)
+        return null
       }
     }
 
-    // Cargar sesión inicial
+    // Función para cargar la sesión inicial
+    const loadSession = async () => {
+      if (!isMounted || sessionLoaded) return
+      
+      try {
+        console.log('🚀 [AUTH] Cargando sesión inicial...')
+        const { data: { session } } = await supabase.auth.getSession()
+        
+        if (session?.user && isMounted) {
+          console.log('✅ [AUTH] Sesión encontrada')
+          setUser(session.user)
+          await loadUserData(session.user.email!)
+          sessionLoaded = true
+        } else {
+          console.log('ℹ️ [AUTH] No hay sesión activa')
+        }
+      } catch (error) {
+        console.error('❌ [AUTH] Error cargando sesión:', error)
+      } finally {
+        if (isMounted) {
+          setLoading(false)
+          sessionLoaded = true
+        }
+      }
+    }
+
+    // Cargar sesión inicial con timeout de seguridad
+    const loadTimeout = setTimeout(() => {
+      if (isMounted && !sessionLoaded) {
+        console.warn('⚠️ [AUTH] Timeout de carga inicial, forzando loading=false')
+        setLoading(false)
+        sessionLoaded = true
+      }
+    }, 3000)
+
     loadSession()
 
-    // Escuchar cambios de autenticación
+    // Escuchar cambios de autenticación (solo después de sesión inicial)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('🔄 Auth event:', event)
+        if (!isMounted) return
+        
+        console.log('🔄 [AUTH] Event:', event)
+        
+        // Evitar procesamiento durante carga inicial
+        if (!sessionLoaded && event === 'INITIAL_SESSION') {
+          return
+        }
         
         if (session?.user) {
           setUser(session.user)
-          await loadUserData(session.user.email!)
+          // Solo cargar datos si no es la sesión inicial o si cambió el usuario
+          if (event !== 'INITIAL_SESSION' || user?.email !== session.user.email) {
+            await loadUserData(session.user.email!)
+          }
         } else {
           setUser(null)
           setUserData(null)
         }
         
-        setLoading(false)
+        if (isMounted) {
+          setLoading(false)
+        }
       }
     )
 
-    return () => subscription.unsubscribe()
+    return () => {
+      isMounted = false
+      clearTimeout(loadTimeout)
+      subscription.unsubscribe()
+    }
   }, [])
 
   const signOut = async () => {

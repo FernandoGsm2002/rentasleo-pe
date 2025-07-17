@@ -118,8 +118,15 @@ export default function RentasTrabajador() {
 
   const loadRentas = async () => {
     try {
-      console.log('📋 [loadRentas] Iniciando carga de rentas...')
-      const result = await supabase
+      console.log('📋 [RENTAS] Iniciando carga...')
+      setLoading(true)
+      
+      // Timeout de 8 segundos para evitar carga infinita
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Timeout cargando rentas')), 8000)
+      })
+      
+      const dataPromise = supabase
         .from('rentas_herramientas')
         .select(`
           *,
@@ -127,23 +134,44 @@ export default function RentasTrabajador() {
         `)
         .order('created_at', { ascending: false })
 
-      console.log('📋 [loadRentas] Respuesta recibida:', result)
+      const result = await Promise.race([dataPromise, timeoutPromise]) as any
+
+      console.log('📋 [RENTAS] Respuesta recibida:', result.data?.length || 0, 'elementos')
 
       if (result.error) {
-        console.error('❌ [loadRentas] Error en la consulta:', result.error)
+        console.error('❌ [RENTAS] Error en la consulta:', result.error)
         throw result.error
       }
       
-      console.log('📋 [loadRentas] Estableciendo rentas en estado...', result.data?.length || 0, 'elementos')
       setRentas(result.data || [])
-      console.log('✅ Rentas cargadas:', result.data?.length || 0)
-    } catch (error) {
-      console.error('❌ [loadRentas] Error en catch:', error)
-      console.error('Error cargando rentas:', error)
+      console.log('✅ [RENTAS] Cargadas exitosamente')
+      
+    } catch (error: any) {
+      console.error('❌ [RENTAS] Error:', error.message)
+      
+      // En caso de timeout, mostrar datos en caché si los hay
+      if (error.message === 'Timeout cargando rentas' && rentas.length === 0) {
+        console.warn('⚠️ [RENTAS] Timeout, intentando carga simple...')
+        try {
+          // Intento simple sin joins
+          const { data } = await supabase
+            .from('rentas_herramientas')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(50)
+          
+          if (data) {
+            setRentas(data)
+            console.log('✅ [RENTAS] Carga simple exitosa:', data.length)
+          }
+        } catch (simpleError) {
+          console.error('❌ [RENTAS] Error en carga simple:', simpleError)
+        }
+      }
+      
     } finally {
-      console.log('📋 [loadRentas] Estableciendo loading en false...')
+      console.log('🏁 [RENTAS] Finalizando carga')
       setLoading(false)
-      console.log('📋 [loadRentas] loadRentas completado!')
     }
   }
 
@@ -534,7 +562,19 @@ export default function RentasTrabajador() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-600"></div>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-600 mx-auto mb-4"></div>
+          <p className="text-slate-600">Cargando licencias...</p>
+          <div className="mt-4 text-sm text-gray-500">
+            Si esto tarda mucho,{' '}
+            <button 
+              onClick={() => window.location.reload()} 
+              className="text-blue-600 hover:underline"
+            >
+              refrescar página
+            </button>
+          </div>
+        </div>
       </div>
     )
   }

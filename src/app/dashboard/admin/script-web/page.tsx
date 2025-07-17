@@ -172,9 +172,9 @@ export default function ScriptWebAdmin() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900">🔧 Script Añadir Web</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">🔧 Script Añadir Web</h1>
           <p className="text-slate-600">oneclick</p>
         </div>
         <div className="flex items-center space-x-3">
@@ -183,7 +183,7 @@ export default function ScriptWebAdmin() {
             className="bg-slate-500 text-white px-4 py-2 rounded-lg hover:bg-slate-600 flex items-center space-x-2 transition-colors"
           >
             <Trash2 className="w-4 h-4" />
-            <span>Limpiar</span>
+            <span className="hidden sm:inline">Limpiar</span>
           </button>
         </div>
       </div>
@@ -191,7 +191,7 @@ export default function ScriptWebAdmin() {
       
 
       {/* Área de trabajo */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         {/* Input */}
         <div className="bg-white rounded-lg shadow-sm border">
           <div className="px-4 py-3 border-b border-slate-200">
@@ -207,28 +207,28 @@ export default function ScriptWebAdmin() {
                              placeholder="pega aqui"
                              className="w-full h-64 p-3 border border-slate-300 rounded-lg focus:ring-slate-500 focus:border-slate-500 resize-none font-mono text-sm text-slate-900"
             />
-            <div className="mt-3 flex justify-between items-center">
-              <span className="text-sm text-slate-500">
-                {inputText.length} caracteres
-              </span>
-              <button
-                onClick={handleFormat}
-                disabled={processing || !inputText.trim()}
-                className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 transition-colors"
-              >
-                {processing ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                    <span>Procesando...</span>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle className="w-4 h-4" />
-                    <span>Formatear</span>
-                  </>
-                )}
-              </button>
-            </div>
+                         <div className="mt-3 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+               <span className="text-sm text-slate-500">
+                 {inputText.length} caracteres
+               </span>
+               <button
+                 onClick={handleFormat}
+                 disabled={processing || !inputText.trim()}
+                 className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 transition-colors w-full sm:w-auto"
+               >
+                 {processing ? (
+                   <>
+                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                     <span>Procesando...</span>
+                   </>
+                 ) : (
+                   <>
+                     <CheckCircle className="w-4 h-4" />
+                     <span>Formatear</span>
+                   </>
+                 )}
+               </button>
+             </div>
           </div>
         </div>
 
@@ -247,29 +247,29 @@ export default function ScriptWebAdmin() {
               placeholder="resultado aqui"
                              className="w-full h-64 p-3 border border-slate-300 rounded-lg bg-slate-50 resize-none font-mono text-sm text-slate-900"
             />
-            <div className="mt-3 flex justify-between items-center">
-              <span className="text-sm text-slate-500">
-                {outputText ? `${outputText.split('\n').filter(l => l.trim()).length} credenciales formateadas` : 'Sin resultados'}
-              </span>
-              <div className="flex space-x-2">
-                <button
-                  onClick={copyToClipboard}
-                  disabled={!outputText}
-                  className="bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 transition-colors"
-                >
-                  <Copy className="w-4 h-4" />
-                  <span>Copiar</span>
-                </button>
-                <button
-                  onClick={downloadFile}
-                  disabled={!outputText}
-                  className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 transition-colors"
-                >
-                  <Download className="w-4 h-4" />
-                  <span>Descargar</span>
-                </button>
-              </div>
-            </div>
+                         <div className="mt-3 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+               <span className="text-sm text-slate-500">
+                 {outputText ? `${outputText.split('\n').filter(l => l.trim()).length} credenciales formateadas` : 'Sin resultados'}
+               </span>
+               <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                 <button
+                   onClick={copyToClipboard}
+                   disabled={!outputText}
+                   className="bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 transition-colors"
+                 >
+                   <Copy className="w-4 h-4" />
+                   <span>Copiar</span>
+                 </button>
+                 <button
+                   onClick={downloadFile}
+                   disabled={!outputText}
+                   className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 transition-colors"
+                 >
+                   <Download className="w-4 h-4" />
+                   <span>Descargar</span>
+                 </button>
+               </div>
+             </div>
           </div>
         </div>
       </div>

@@ -429,6 +429,40 @@ export default function RentasAdmin() {
                          (selectedStatus === 'vencida' && currentStatus === 'Vencida')
     
     return matchesSearch && matchesTool && matchesStatus
+  }).sort((a, b) => {
+    // Ordenamiento por prioridad:
+    // 1. En uso próximas a vencer (menos de 24 horas)
+    // 2. En uso normales
+    // 3. Vencidas
+    // 4. Disponibles
+    const statusA = getStatusText(a)
+    const statusB = getStatusText(b)
+    
+    const getPriority = (renta: RentaHerramienta) => {
+      const status = getStatusText(renta)
+      if (status === 'En Uso') {
+        const now = new Date()
+        const fin = new Date(renta.fecha_fin)
+        const hoursRemaining = (fin.getTime() - now.getTime()) / (1000 * 60 * 60)
+        return hoursRemaining < 24 ? 1 : 2 // Próximas a vencer tienen prioridad 1
+      }
+      if (status === 'Vencida') return 3
+      return 4 // Disponibles al final
+    }
+    
+    const priorityA = getPriority(a)
+    const priorityB = getPriority(b)
+    
+    if (priorityA !== priorityB) {
+      return priorityA - priorityB
+    }
+    
+    // Si tienen la misma prioridad, ordenar por fecha de fin (más próximas primero)
+    if (statusA === 'En Uso' && statusB === 'En Uso') {
+      return new Date(a.fecha_fin).getTime() - new Date(b.fecha_fin).getTime()
+    }
+    
+    return 0
   })
 
   const getPasswordChangeUrl = (tipoHerramienta: string) => {
@@ -518,7 +552,7 @@ export default function RentasAdmin() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="w-full space-y-6">
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
@@ -555,7 +589,7 @@ export default function RentasAdmin() {
       </div>
 
       {/* Herramientas Overview */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="w-full grid grid-cols-2 md:grid-cols-5 gap-4">
         {HERRAMIENTAS_DISPONIBLES.slice(0, -1).map((herramienta) => {
           const count = rentas.filter(r => r.tipo_herramienta === herramienta.id && r.activa).length
           const total = rentas.filter(r => r.tipo_herramienta === herramienta.id).length
@@ -589,9 +623,9 @@ export default function RentasAdmin() {
         })}
       </div>
 
-      {/* Filtros por Estado */}
+      {/* Filtros por Estado - Reordenados por Prioridad */}
       <div className="bg-white p-4 rounded-lg shadow-sm">
-        <h3 className="text-sm font-semibold text-slate-700 mb-3">Filtrar por Estado</h3>
+        <h3 className="text-sm font-semibold text-slate-700 mb-3">Filtrar por Estado (ordenado por prioridad)</h3>
         <div className="flex flex-wrap gap-3">
           <button
             onClick={() => setSelectedStatus('')}
@@ -604,16 +638,6 @@ export default function RentasAdmin() {
             📋 Todas ({rentas.length})
           </button>
           <button
-            onClick={() => setSelectedStatus('disponible')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              selectedStatus === 'disponible' 
-                ? 'bg-gray-600 text-white' 
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            ⚪ Disponibles ({rentas.filter(r => getStatusText(r) === 'Disponible').length})
-          </button>
-          <button
             onClick={() => setSelectedStatus('en_uso')}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
               selectedStatus === 'en_uso' 
@@ -622,6 +646,29 @@ export default function RentasAdmin() {
             }`}
           >
             🟢 En Uso ({rentas.filter(r => getStatusText(r) === 'En Uso').length})
+            {rentas.filter(r => {
+              const status = getStatusText(r)
+              if (status === 'En Uso') {
+                const now = new Date()
+                const fin = new Date(r.fecha_fin)
+                const hoursRemaining = (fin.getTime() - now.getTime()) / (1000 * 60 * 60)
+                return hoursRemaining < 24
+              }
+              return false
+            }).length > 0 && (
+              <span className="ml-1 text-xs bg-orange-500 text-white px-1 rounded-full animate-pulse">
+                ⚠️ {rentas.filter(r => {
+                  const status = getStatusText(r)
+                  if (status === 'En Uso') {
+                    const now = new Date()
+                    const fin = new Date(r.fecha_fin)
+                    const hoursRemaining = (fin.getTime() - now.getTime()) / (1000 * 60 * 60)
+                    return hoursRemaining < 24
+                  }
+                  return false
+                }).length} próximas a vencer
+              </span>
+            )}
           </button>
           <button
             onClick={() => setSelectedStatus('vencida')}
@@ -632,6 +679,16 @@ export default function RentasAdmin() {
             }`}
           >
             🔴 Vencidas ({rentas.filter(r => getStatusText(r) === 'Vencida').length})
+          </button>
+          <button
+            onClick={() => setSelectedStatus('disponible')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              selectedStatus === 'disponible' 
+                ? 'bg-gray-600 text-white' 
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            ⚪ Disponibles ({rentas.filter(r => getStatusText(r) === 'Disponible').length})
           </button>
         </div>
       </div>
@@ -699,14 +756,28 @@ export default function RentasAdmin() {
         )}
       </div>
 
-      {/* Licencias Table */}
+      {/* Licencias - Vista Responsiva */}
       <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200">
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
           <h3 className="text-lg font-medium text-gray-900">
             Licencias Disponibles ({filteredRentas.length})
           </h3>
+          {/* Selector para seleccionar todo - Solo desktop */}
+          <div className="hidden md:block">
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={selectedLicenses.size === filteredRentas.length && filteredRentas.length > 0}
+                onChange={(e) => handleSelectAllLicenses(e.target.checked)}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-sm text-gray-600">Seleccionar todas</span>
+            </label>
+          </div>
         </div>
-        <div className="overflow-x-auto">
+
+        {/* Vista Desktop - Tabla */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
@@ -742,8 +813,16 @@ export default function RentasAdmin() {
               {filteredRentas.map((renta) => {
                 const herramientaInfo = getHerramientaInfo(renta.tipo_herramienta)
                 const duracionInfo = getDuracionInfo(renta.duracion_horas)
+                const status = getStatusText(renta)
+                const isExpiringSoon = status === 'En Uso' && (() => {
+                  const now = new Date()
+                  const fin = new Date(renta.fecha_fin)
+                  const hoursRemaining = (fin.getTime() - now.getTime()) / (1000 * 60 * 60)
+                  return hoursRemaining < 24
+                })()
+                
                 return (
-                  <tr key={renta.id} className="hover:bg-gray-50">
+                  <tr key={renta.id} className={`hover:bg-gray-50 ${isExpiringSoon ? 'bg-orange-50 border-l-4 border-orange-400' : ''}`}>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <input
                         type="checkbox"
@@ -770,8 +849,11 @@ export default function RentasAdmin() {
                           )}
                         </div>
                         <div>
-                          <div className="text-sm font-medium text-gray-900">
+                          <div className="text-sm font-medium text-gray-900 flex items-center">
                             {herramientaInfo.nombre}
+                            {isExpiringSoon && (
+                              <span className="ml-2 text-orange-600 animate-pulse">⚠️</span>
+                            )}
                           </div>
                           <div className="text-sm text-gray-500">
                             {renta.nombre_herramienta}
@@ -810,9 +892,12 @@ export default function RentasAdmin() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`inline-flex px-3 py-1 text-xs font-semibold rounded-full ${getStatusColor(renta)}`}>
-                        {getStatusText(renta)}
-                        {getStatusText(renta) === 'Vencida' && (
+                        {status}
+                        {status === 'Vencida' && (
                           <AlertCircle className="w-3 h-3 ml-1 animate-pulse" />
+                        )}
+                        {isExpiringSoon && (
+                          <span className="ml-1 text-orange-600">⏰</span>
                         )}
                       </span>
                       {renta.activa && renta.duracion_horas > 0 && (
@@ -848,7 +933,7 @@ export default function RentasAdmin() {
                           >
                             <Play className="w-4 h-4" />
                           </button>
-                        ) : getStatusText(renta) === 'Vencida' ? (
+                        ) : status === 'Vencida' ? (
                           <button
                             onClick={() => handleExpiredRent(renta)}
                             className="p-1 rounded text-orange-600 hover:text-orange-900 hover:bg-orange-50"
@@ -886,6 +971,168 @@ export default function RentasAdmin() {
               })}
             </tbody>
           </table>
+        </div>
+
+        {/* Vista Móvil - Cards */}
+        <div className="md:hidden divide-y divide-gray-200">
+          {filteredRentas.map((renta) => {
+            const herramientaInfo = getHerramientaInfo(renta.tipo_herramienta)
+            const duracionInfo = getDuracionInfo(renta.duracion_horas)
+            const status = getStatusText(renta)
+            const isExpiringSoon = status === 'En Uso' && (() => {
+              const now = new Date()
+              const fin = new Date(renta.fecha_fin)
+              const hoursRemaining = (fin.getTime() - now.getTime()) / (1000 * 60 * 60)
+              return hoursRemaining < 24
+            })()
+            
+            return (
+              <div key={renta.id} className={`p-4 ${isExpiringSoon ? 'bg-orange-50 border-l-4 border-orange-400' : ''}`}>
+                {/* Header de la card */}
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center space-x-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedLicenses.has(renta.id)}
+                      onChange={(e) => handleLicenseSelection(renta.id, e.target.checked)}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 mt-1"
+                    />
+                    <div className="w-12 h-12 rounded-lg flex items-center justify-center overflow-hidden bg-gray-100">
+                      {herramientaInfo.imagen ? (
+                        <Image
+                          src={herramientaInfo.imagen}
+                          alt={herramientaInfo.nombre}
+                          width={48}
+                          height={48}
+                          className="w-12 h-12 object-contain rounded-lg"
+                        />
+                      ) : (
+                        <div className={`w-full h-full ${herramientaInfo.color} rounded-lg flex items-center justify-center`}>
+                          <Wrench className="w-6 h-6 text-white" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-gray-900 flex items-center">
+                        {herramientaInfo.nombre}
+                        {isExpiringSoon && (
+                          <span className="ml-2 text-orange-600 animate-pulse">⚠️</span>
+                        )}
+                      </h4>
+                      <p className="text-sm text-gray-600">{renta.nombre_herramienta}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-1">
+                    {!renta.activa ? (
+                      <button
+                        onClick={() => handleRent(renta)}
+                        className="p-2 rounded-lg text-green-600 hover:bg-green-50"
+                        title="Iniciar renta"
+                      >
+                        <Play className="w-5 h-5" />
+                      </button>
+                    ) : status === 'Vencida' ? (
+                      <button
+                        onClick={() => handleExpiredRent(renta)}
+                        className="p-2 rounded-lg text-orange-600 hover:bg-orange-50"
+                        title="Cambiar contraseña"
+                      >
+                        <AlertCircle className="w-5 h-5" />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => stopRent(renta)}
+                        className="p-2 rounded-lg text-red-600 hover:bg-red-50"
+                        title="Detener renta"
+                      >
+                        <Pause className="w-5 h-5" />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleEdit(renta)}
+                      className="p-2 rounded-lg text-blue-600 hover:bg-blue-50"
+                      title="Editar licencia"
+                    >
+                      <Edit className="w-5 h-5" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(renta.id)}
+                      className="p-2 rounded-lg text-red-600 hover:bg-red-50"
+                      title="Eliminar licencia"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Credenciales */}
+                <div className="bg-gray-50 rounded-lg p-3 mb-3">
+                  <div className="space-y-2">
+                    <div className="flex items-center text-sm">
+                      <User className="w-4 h-4 mr-2 text-gray-400" />
+                      <span className="font-medium text-gray-700">Usuario:</span>
+                      <span className="ml-2 font-mono text-gray-900">{renta.usuario_login}</span>
+                    </div>
+                    <div className="flex items-center text-sm">
+                      <span className="mr-2">🔑</span>
+                      <span className="font-medium text-gray-700">Password:</span>
+                      <span className="ml-2 font-mono text-gray-900">{renta.password_actual}</span>
+                    </div>
+                    <a
+                      href={getPasswordChangeUrl(renta.tipo_herramienta)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-blue-600 hover:text-blue-800 underline flex items-center"
+                    >
+                      🔗 Cambiar contraseña aquí
+                    </a>
+                  </div>
+                </div>
+
+                {/* Estado y detalles */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className={`inline-flex px-3 py-1 text-xs font-semibold rounded-full ${getStatusColor(renta)}`}>
+                      {status}
+                      {status === 'Vencida' && (
+                        <AlertCircle className="w-3 h-3 ml-1 animate-pulse" />
+                      )}
+                      {isExpiringSoon && (
+                        <span className="ml-1 text-orange-600">⏰</span>
+                      )}
+                    </span>
+                    {renta.activa && renta.duracion_horas > 0 && (
+                      <span className={`inline-flex px-2 py-1 text-xs rounded-full ${duracionInfo.color}`}>
+                        <Timer className="w-3 h-3 mr-1" />
+                        {duracionInfo.texto}
+                      </span>
+                    )}
+                  </div>
+                  
+                  {renta.activa && (
+                    <div className="text-xs text-gray-600">
+                      <Timer className="w-3 h-3 inline mr-1" />
+                      Hasta: {new Date(renta.fecha_fin).toLocaleString('es-ES', {
+                        day: '2-digit',
+                        month: '2-digit', 
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </div>
+                  )}
+                  
+                  <div className="text-xs text-gray-600">
+                    <span className="font-medium">Responsable:</span> {renta.usuario_responsable?.nombre || 'Sin asignar'}
+                  </div>
+                  
+                  <div className="text-xs text-gray-600">
+                    📧 leonardocontreras1020@gmail.com
+                  </div>
+                </div>
+              </div>
+            )
+          })}
         </div>
       </div>
 

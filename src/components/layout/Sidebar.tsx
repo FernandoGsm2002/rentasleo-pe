@@ -13,7 +13,8 @@ import {
   LogOut,
   BarChart3,
   Clock,
-  DollarSign
+  DollarSign,
+  Code
 } from 'lucide-react'
 
 const adminMenuItems = [
@@ -24,6 +25,7 @@ const adminMenuItems = [
   { name: 'Rentas', href: '/dashboard/admin/rentas', icon: Wrench },
   { name: 'IMEI Justificado', href: '/dashboard/admin/imei', icon: Smartphone },
   { name: 'Bugs Samsung', href: '/dashboard/admin/bugs', icon: Bug },
+  { name: 'Script Añadir Web', href: '/dashboard/admin/script-web', icon: Code },
   { name: 'Reportes', href: '/dashboard/admin/reportes', icon: BarChart3 },
 ]
 
@@ -35,6 +37,7 @@ const trabajadorMenuItems = [
   { name: 'Rentas', href: '/dashboard/trabajador/rentas', icon: Wrench },
   { name: 'IMEI Justificado', href: '/dashboard/trabajador/imei', icon: Smartphone },
   { name: 'Bugs Samsung', href: '/dashboard/trabajador/bugs', icon: Bug },
+  { name: 'Script Añadir Web', href: '/dashboard/trabajador/script-web', icon: Code },
   { name: 'Mis Ingresos', href: '/dashboard/trabajador/ingresos', icon: Clock },
 ]
 

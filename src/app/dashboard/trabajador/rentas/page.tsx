@@ -30,6 +30,9 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/components/ui/toast'
+import { useNotifications } from '@/hooks/useNotifications'
+import { useRentasRealtime } from '@/hooks/useRentasRealtime'
+import NotificationStatus from '@/components/notifications/NotificationStatus'
 
 // Funciones helper simplificadas
 const simpleLog = (operation: string, error: any) => {
@@ -97,6 +100,17 @@ export default function RentasTrabajador() {
   const [submitting, setSubmitting] = useState(false)
   const supabase = createSupabaseBrowserClient()
   const { addToast } = useToast()
+  
+  // Hooks de notificaciones y tiempo real
+  const { notificationsEnabled } = useNotifications()
+  const { isConnected: isRealtimeConnected, forceCheck } = useRentasRealtime(rentas, {
+    onRentasUpdate: () => {
+      console.log('🔄 Recargando rentas por cambio en tiempo real...')
+      loadRentas()
+    },
+    autoCheckExpired: true,
+    checkInterval: 20 // cada 20 minutos para trabajadores
+  })
 
   const {
     register,
@@ -636,6 +650,14 @@ export default function RentasTrabajador() {
               <span>Generar Script ({selectedLicenses.size})</span>
             </button>
           )}
+          
+          {/* Campanita de notificaciones */}
+          <NotificationStatus 
+            rentas={rentas} 
+            isRealtimeConnected={isRealtimeConnected}
+            compact={true}
+          />
+          
           <button
             onClick={() => {
               setEditingRenta(null)
@@ -649,6 +671,8 @@ export default function RentasTrabajador() {
           </button>
         </div>
       </div>
+
+
 
       {/* Herramientas Overview */}
       <div className="w-full grid grid-cols-2 md:grid-cols-5 gap-4">

@@ -51,6 +51,11 @@ function DashboardContent({ children }: DashboardLayoutProps) {
           <h1 className="text-lg font-semibold text-gray-900 ml-3">
             Dashboard
           </h1>
+          
+          {/* Indicador compacto de notificaciones - Solo en páginas de rentas */}
+          <div className="ml-auto hidden md:block">
+            {/* Esto se podría expandir para mostrar estado de notificaciones */}
+          </div>
         </header>
 
         {/* Contenido principal */}
